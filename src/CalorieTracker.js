@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
@@ -60,25 +60,8 @@ const CalorieTracker = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (session?.user) {
-      loadAllData();
-    }
-  }, [session]);
-
-  useEffect(() => {
-    setSelectedDate(getLocalDateString());
-  }, []);
-
   // Data loading functions
-  const loadAllData = async () => {
-    if (!session?.user) return;
-    setIsLoading(true);
-    await Promise.all([loadEntries(), loadCorrections(), loadGoals()]);
-    setIsLoading(false);
-  };
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     const { data, error } = await supabase
       .from('entries')
       .select('*')
@@ -106,9 +89,9 @@ const CalorieTracker = () => {
       });
     });
     setEntries(grouped);
-  };
+  }, [session?.user?.id]);
 
-  const loadCorrections = async () => {
+  const loadCorrections = useCallback(async () => {
     const { data, error } = await supabase
       .from('corrections')
       .select('*')
@@ -130,9 +113,9 @@ const CalorieTracker = () => {
       };
     });
     setCorrections(correctionsMap);
-  };
+  }, [session?.user?.id]);
 
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     const { data, error } = await supabase
       .from('goals')
       .select('*')
@@ -152,7 +135,24 @@ const CalorieTracker = () => {
         fat: data.fat
       });
     }
-  };
+  }, [session?.user?.id]);
+
+  const loadAllData = useCallback(async () => {
+    if (!session?.user) return;
+    setIsLoading(true);
+    await Promise.all([loadEntries(), loadCorrections(), loadGoals()]);
+    setIsLoading(false);
+  }, [loadEntries, loadCorrections, loadGoals, session?.user]);
+
+  useEffect(() => {
+    if (session?.user) {
+      loadAllData();
+    }
+  }, [loadAllData, session?.user]);
+
+  useEffect(() => {
+    setSelectedDate(getLocalDateString());
+  }, []);
 
   // Auth functions
   const handleSignUp = async () => {
