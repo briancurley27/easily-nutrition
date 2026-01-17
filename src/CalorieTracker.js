@@ -120,9 +120,9 @@ const CalorieTracker = () => {
       .from('goals')
       .select('*')
       .eq('user_id', session.user.id)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       console.error('Error loading goals:', error);
       return;
     }
@@ -228,7 +228,7 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(corrections, null, 2)}`
         : '';
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/anthropic/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -251,6 +251,11 @@ Return ONLY valid JSON array:
           }]
         })
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Anthropic proxy error (${response.status}): ${errorText}`);
+      }
 
       const data = await response.json();
       
