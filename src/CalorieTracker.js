@@ -62,21 +62,19 @@ const CalorieTracker = () => {
 
   useEffect(() => {
     if (session?.user) {
+      const loadAllData = async () => {
+        setIsLoading(true);
+        await Promise.all([loadEntries(), loadCorrections(), loadGoals()]);
+        setIsLoading(false);
+      };
       loadAllData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => {
     setSelectedDate(getLocalDateString());
   }, []);
-
-  // Data loading functions
-  const loadAllData = async () => {
-    if (!session?.user) return;
-    setIsLoading(true);
-    await Promise.all([loadEntries(), loadCorrections(), loadGoals()]);
-    setIsLoading(false);
-  };
 
   const loadEntries = async () => {
     const { data, error } = await supabase
