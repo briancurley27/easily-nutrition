@@ -649,7 +649,7 @@ Return ONLY valid JSON array:
                   </button>
                 </div>
                 {authMode === 'signup' && (
-                  <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+                  <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters</p>
                 )}
               </div>
             )}
