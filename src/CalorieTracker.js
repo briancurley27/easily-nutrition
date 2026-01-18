@@ -240,8 +240,13 @@ const CalorieTracker = () => {
     setProcessingError(null);
 
     try {
-      const correctionsContext = Object.keys(corrections).length > 0
-        ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(corrections, null, 2)}`
+      // Only include corrections that might be relevant (limit to 10 most recent to reduce token usage)
+      const relevantCorrections = Object.keys(corrections).length > 0
+        ? Object.fromEntries(Object.entries(corrections).slice(-10))
+        : {};
+
+      const correctionsContext = Object.keys(relevantCorrections).length > 0
+        ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
       const response = await fetch('/api/anthropic/messages', {
@@ -249,7 +254,7 @@ const CalorieTracker = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1500,
+          max_tokens: 800,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: 'user',
