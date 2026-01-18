@@ -400,10 +400,33 @@ Return ONLY valid JSON array:
       total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
     };
 
-    const { data, error } = await supabase.from('entries').insert(newEntry).select().single();
+    let data, error;
+    let retries = 0;
+    const maxRetries = 3;
+
+    // Retry logic for network errors
+    while (retries < maxRetries) {
+      const result = await supabase.from('entries').insert(newEntry).select().single();
+      data = result.data;
+      error = result.error;
+
+      if (!error) break;
+
+      // If it's a network error, retry after a delay
+      if (error.message?.includes('Load failed') || error.message?.includes('network')) {
+        retries++;
+        if (retries < maxRetries) {
+          console.log(`Network error, retrying (${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // Exponential backoff
+          continue;
+        }
+      }
+      break;
+    }
 
     if (error) {
       console.error('Error saving entry:', error);
+      setProcessingError(`Failed to save entry: ${error.message || 'Database connection error'}. Your food was logged but not saved.`);
       return;
     }
 
