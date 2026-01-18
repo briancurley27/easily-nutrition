@@ -254,23 +254,20 @@ const CalorieTracker = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
+          max_tokens: 600,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: 'user',
-            content: `Parse "${foodText}" into food items with accurate nutrition data (calories, protein, carbs, fat).
+            content: `Parse "${foodText}" into nutrition data.
 
-CRITICAL INSTRUCTIONS:
-1. INCLUDE EVERY FOOD ITEM the user mentions - do NOT skip items just because they don't match a brand context
-2. For BRAND-SPECIFIC items (Fishwife, Cava, McDonald's, Costco, Nature's Bakery, etc.), you MUST use web_search to find official nutrition data
-3. Pay CLOSE ATTENTION to form/preparation: "canned chicken" is different from "rotisserie chicken", "can of tuna" vs "fresh tuna"
-4. For generic items (banana, egg, chicken breast), use USDA values or search if uncertain
-5. If quantity mentioned (like "6 dumplings" or "1/4 can"), create ONE entry with TOTAL nutrition for that quantity
-6. Split different foods into separate array items - each food mentioned gets its own entry
-7. When checking user corrections, match CASE-INSENSITIVELY${correctionsContext}
+RULES:
+- INCLUDE ALL items (don't skip any)
+- Brand items: use web_search
+- Generic: use USDA
+- Quantities: total nutrition for amount${correctionsContext}
 
-Return ONLY valid JSON array with ALL items mentioned:
-[{"item":"Food name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"official website / USDA / user correction"}]`
+Return JSON array:
+[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
           }]
         })
       });
