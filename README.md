@@ -16,12 +16,24 @@ Track your daily nutrition with natural language powered by AI.
    ANTHROPIC_API_KEY=...
    ```
 
-3. Start the development server:
+3. Start the development servers:
+
+   **Option A: With API Routes (Recommended for full testing)**
+   ```bash
+   # Terminal 1: Start React dev server
+   npm start
+
+   # Terminal 2: Start API proxy server
+   npm run dev
+   ```
+   Then open [http://localhost:3001](http://localhost:3001) in your browser.
+
+   **Option B: Frontend only (UI development)**
    ```bash
    npm start
    ```
-
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+   Then open [http://localhost:3000](http://localhost:3000) in your browser.
+   Note: API calls won't work without the proxy server.
 
 ## Vercel Deployment
 

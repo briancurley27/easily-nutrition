@@ -247,8 +247,8 @@ const CalorieTracker = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 2000,
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1500,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: 'user',
