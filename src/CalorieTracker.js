@@ -258,15 +258,13 @@ const CalorieTracker = () => {
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: 'user',
-            content: `Parse "${foodText}" into nutrition data.
+            content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
 
-RULES:
-- INCLUDE ALL items (don't skip any)
-- Brand items: use web_search
-- Generic: use USDA
-- Quantities: total nutrition for amount${correctionsContext}
+CRITICAL: Include ALL items, even if from different brands. Search each separately.
+- Brand items (Chick-fil-A, Nature's Bakery, etc): web_search
+- Generic (banana, egg): USDA${correctionsContext}
 
-Return JSON array:
+JSON array with ALL items:
 [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
           }]
         })
