@@ -41,6 +41,7 @@ const CalorieTracker = () => {
   const [showGoalsModal, setShowGoalsModal] = useState(false);
   const [goalInputs, setGoalInputs] = useState({ calories: '', protein: '', carbs: '', fat: '' });
   const [visibleSourceKey, setVisibleSourceKey] = useState(null);
+  const [processingError, setProcessingError] = useState(null);
 
   // Auth listener
   useEffect(() => {
@@ -235,9 +236,10 @@ const CalorieTracker = () => {
   // Food processing
   const processFood = async (foodText) => {
     setIsProcessing(true);
-    
+    setProcessingError(null);
+
     try {
-      const correctionsContext = Object.keys(corrections).length > 0 
+      const correctionsContext = Object.keys(corrections).length > 0
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(corrections, null, 2)}`
         : '';
 
@@ -267,39 +269,105 @@ Return ONLY valid JSON array:
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Anthropic proxy error (${response.status}): ${errorText}`);
+        const errorMsg = `API error (${response.status}): ${errorText}`;
+        console.error('[processFood] API error:', errorMsg);
+        setProcessingError(errorMsg);
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      
+      console.log('[processFood] API response structure:', {
+        hasContent: !!data.content,
+        contentLength: data.content?.length,
+        contentTypes: data.content?.map(b => b.type)
+      });
+
+      // Extract text from all text blocks
       let allText = '';
       if (data.content) {
         for (const block of data.content) {
-          if (block.type === 'text') allText += block.text + '\n';
+          if (block.type === 'text') {
+            allText += block.text + '\n';
+          }
         }
       }
-      
-      if (!allText) throw new Error('No text in response');
-      
+
+      console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
+
+      if (!allText) {
+        const errorMsg = 'No text content in API response';
+        console.error('[processFood]', errorMsg, 'Full response:', data);
+        setProcessingError(errorMsg + '. Check console for details.');
+        throw new Error(errorMsg);
+      }
+
+      // Clean markdown code blocks
       let content = allText.trim().replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+      // Try to find JSON array
       const arrayMatch = content.match(/\[\s*\{[\s\S]*?\}\s*\]/);
-      if (!arrayMatch) throw new Error('Could not find JSON array');
-      
-      const foodItems = JSON.parse(arrayMatch[0]);
-      
-      return foodItems.map(item => ({
-        item: item.item || 'Unknown',
-        calories: parseInt(item.calories) || 0,
-        protein: parseInt(item.protein) || 0,
-        carbs: parseInt(item.carbs) || 0,
-        fat: parseInt(item.fat) || 0,
-        source: item.source || 'estimate',
-        error: !item.calories || parseInt(item.calories) === 0
-      }));
-      
+      if (!arrayMatch) {
+        const errorMsg = 'Could not find JSON array in response';
+        console.error('[processFood]', errorMsg);
+        console.error('[processFood] Response content:', content);
+        setProcessingError(errorMsg + '. The AI may have returned an unexpected format.');
+        throw new Error(errorMsg);
+      }
+
+      console.log('[processFood] Found JSON array:', arrayMatch[0].substring(0, 200));
+
+      // Parse the JSON
+      let foodItems;
+      try {
+        foodItems = JSON.parse(arrayMatch[0]);
+      } catch (parseError) {
+        const errorMsg = `JSON parse error: ${parseError.message}`;
+        console.error('[processFood]', errorMsg);
+        console.error('[processFood] Attempted to parse:', arrayMatch[0]);
+        setProcessingError(errorMsg);
+        throw parseError;
+      }
+
+      console.log('[processFood] Parsed food items:', foodItems);
+
+      // Validate and map items
+      const mappedItems = foodItems.map((item, index) => {
+        const hasCalories = item.calories && parseInt(item.calories) > 0;
+        if (!hasCalories) {
+          console.warn(`[processFood] Item ${index} has no calories:`, item);
+        }
+        return {
+          item: item.item || 'Unknown',
+          calories: parseInt(item.calories) || 0,
+          protein: parseInt(item.protein) || 0,
+          carbs: parseInt(item.carbs) || 0,
+          fat: parseInt(item.fat) || 0,
+          source: item.source || 'estimate',
+          error: !hasCalories
+        };
+      });
+
+      console.log('[processFood] Success! Returning', mappedItems.length, 'items');
+      return mappedItems;
+
     } catch (error) {
-      console.error('Processing error:', error);
-      return [{ item: foodText, calories: 0, protein: 0, carbs: 0, fat: 0, source: 'error', error: true }];
+      console.error('[processFood] Exception:', error.message);
+      console.error('[processFood] Stack:', error.stack);
+
+      // Set user-friendly error message if not already set
+      if (!processingError) {
+        setProcessingError(`Failed to process food: ${error.message}`);
+      }
+
+      return [{
+        item: foodText,
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        source: 'error',
+        error: true
+      }];
     } finally {
       setIsProcessing(false);
     }
@@ -952,23 +1020,43 @@ Return ONLY valid JSON array:
 
       {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex gap-3">
-          <input
-            type="text"
-            value={currentInput}
-            onChange={(e) => setCurrentInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
-            disabled={isProcessing}
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={isProcessing || !currentInput.trim()}
-            className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isProcessing ? 'Processing...' : <><Send size={20} />Log</>}
-          </button>
+        <div className="max-w-4xl mx-auto">
+          {/* Error Message */}
+          {processingError && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+              <div className="flex-1">
+                <p className="text-sm text-red-800 font-medium">Processing Error</p>
+                <p className="text-xs text-red-600 mt-1">{processingError}</p>
+                <p className="text-xs text-red-500 mt-1">Check browser console (F12) for detailed logs.</p>
+              </div>
+              <button
+                onClick={() => setProcessingError(null)}
+                className="text-red-400 hover:text-red-600"
+                aria-label="Dismiss error"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={currentInput}
+              onChange={(e) => setCurrentInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
+              disabled={isProcessing}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={isProcessing || !currentInput.trim()}
+              className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isProcessing ? 'Processing...' : <><Send size={20} />Log</>}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -37,6 +37,15 @@ module.exports = async (req, res) => {
 
   try {
     const body = await getJsonBody(req);
+
+    // Log request details (sanitize messages for privacy)
+    console.log('[Anthropic API] Request:', {
+      model: body.model,
+      max_tokens: body.max_tokens,
+      tools: body.tools,
+      message_preview: body.messages?.[0]?.content?.substring(0, 100) + '...'
+    });
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -49,10 +58,21 @@ module.exports = async (req, res) => {
 
     const responseText = await response.text();
     const contentType = response.headers.get('content-type') || 'application/json';
+
+    // Log response details
+    console.log('[Anthropic API] Response Status:', response.status);
+    console.log('[Anthropic API] Response Preview:', responseText.substring(0, 500));
+
+    // If error status, log full response
+    if (!response.ok) {
+      console.error('[Anthropic API] Error Response:', responseText);
+    }
+
     res.status(response.status).setHeader('Content-Type', contentType);
     res.send(responseText);
   } catch (error) {
-    console.error('Anthropic proxy error:', error);
-    res.status(500).json({ error: 'Anthropic proxy failed.' });
+    console.error('[Anthropic proxy] Exception:', error.message);
+    console.error('[Anthropic proxy] Stack:', error.stack);
+    res.status(500).json({ error: 'Anthropic proxy failed.', details: error.message });
   }
 };
