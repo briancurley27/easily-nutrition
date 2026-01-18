@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff } from 'lucide-react';
+import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
@@ -42,6 +42,7 @@ const CalorieTracker = () => {
   const [goalInputs, setGoalInputs] = useState({ calories: '', protein: '', carbs: '', fat: '' });
   const [visibleSourceKey, setVisibleSourceKey] = useState(null);
   const [processingError, setProcessingError] = useState(null);
+  const [draggedItem, setDraggedItem] = useState(null); // { entryId, itemIndex }
 
   // Auth listener
   useEffect(() => {
@@ -255,11 +256,12 @@ const CalorieTracker = () => {
             content: `Parse "${foodText}" into food items with accurate nutrition data (calories, protein, carbs, fat).
 
 CRITICAL INSTRUCTIONS:
-1. For BRAND-SPECIFIC items (Fishwife, Cava, McDonald's, etc.), you MUST use web_search to find official nutrition data
-2. For generic items (banana, egg, chicken breast), use USDA values or search if uncertain
-3. If quantity mentioned (like "6 dumplings"), create ONE entry with TOTAL nutrition
-4. Split different foods into separate array items
-5. When checking user corrections, match CASE-INSENSITIVELY${correctionsContext}
+1. For BRAND-SPECIFIC items (Fishwife, Cava, McDonald's, Costco, etc.), you MUST use web_search to find official nutrition data
+2. Pay CLOSE ATTENTION to form/preparation: "canned chicken" is different from "rotisserie chicken", "can of tuna" vs "fresh tuna"
+3. For generic items (banana, egg, chicken breast), use USDA values or search if uncertain
+4. If quantity mentioned (like "6 dumplings" or "1/4 can"), create ONE entry with TOTAL nutrition for that quantity
+5. Split different foods into separate array items
+6. When checking user corrections, match CASE-INSENSITIVELY${correctionsContext}
 
 Return ONLY valid JSON array:
 [{"item":"Food name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"official website / USDA / user correction"}]`
@@ -566,6 +568,121 @@ Return ONLY valid JSON array:
     setEntries(updatedEntries);
     setEditingNutrition(null);
     setNutritionEditValues({});
+  };
+
+  // Drag and drop for reordering items
+  const handleDragStart = (entryId, itemIndex) => {
+    setDraggedItem({ entryId, itemIndex });
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault(); // Allow drop
+  };
+
+  const handleDrop = async (targetEntryId, targetItemIndex) => {
+    if (!draggedItem) return;
+
+    const { entryId: sourceEntryId, itemIndex: sourceItemIndex } = draggedItem;
+
+    // Don't do anything if dropped in the same position
+    if (sourceEntryId === targetEntryId && sourceItemIndex === targetItemIndex) {
+      setDraggedItem(null);
+      return;
+    }
+
+    const updatedEntries = { ...entries };
+    const sourceEntry = updatedEntries[selectedDate].find(e => e.id === sourceEntryId);
+    const targetEntry = updatedEntries[selectedDate].find(e => e.id === targetEntryId);
+
+    if (!sourceEntry || !targetEntry) {
+      setDraggedItem(null);
+      return;
+    }
+
+    // Get the item being moved
+    const movedItem = sourceEntry.items[sourceItemIndex];
+
+    if (sourceEntryId === targetEntryId) {
+      // Reordering within same entry
+      const newItems = [...sourceEntry.items];
+      newItems.splice(sourceItemIndex, 1);
+      newItems.splice(targetItemIndex, 0, movedItem);
+
+      // Update totals
+      const newTotals = {
+        total_calories: newItems.reduce((sum, i) => sum + (i.calories || 0), 0),
+        total_protein: newItems.reduce((sum, i) => sum + (i.protein || 0), 0),
+        total_carbs: newItems.reduce((sum, i) => sum + (i.carbs || 0), 0),
+        total_fat: newItems.reduce((sum, i) => sum + (i.fat || 0), 0)
+      };
+
+      // Update database
+      await supabase.from('entries').update({ items: newItems, ...newTotals }).eq('id', sourceEntryId);
+
+      // Update state
+      const entryIndex = updatedEntries[selectedDate].findIndex(e => e.id === sourceEntryId);
+      updatedEntries[selectedDate][entryIndex] = {
+        ...sourceEntry,
+        items: newItems,
+        totalCalories: newTotals.total_calories,
+        totalProtein: newTotals.total_protein,
+        totalCarbs: newTotals.total_carbs,
+        totalFat: newTotals.total_fat
+      };
+    } else {
+      // Moving between entries
+      const sourceItems = [...sourceEntry.items];
+      const targetItems = [...targetEntry.items];
+
+      // Remove from source
+      sourceItems.splice(sourceItemIndex, 1);
+      // Add to target
+      targetItems.splice(targetItemIndex, 0, movedItem);
+
+      // Calculate new totals for both entries
+      const sourceTotals = {
+        total_calories: sourceItems.reduce((sum, i) => sum + (i.calories || 0), 0),
+        total_protein: sourceItems.reduce((sum, i) => sum + (i.protein || 0), 0),
+        total_carbs: sourceItems.reduce((sum, i) => sum + (i.carbs || 0), 0),
+        total_fat: sourceItems.reduce((sum, i) => sum + (i.fat || 0), 0)
+      };
+
+      const targetTotals = {
+        total_calories: targetItems.reduce((sum, i) => sum + (i.calories || 0), 0),
+        total_protein: targetItems.reduce((sum, i) => sum + (i.protein || 0), 0),
+        total_carbs: targetItems.reduce((sum, i) => sum + (i.carbs || 0), 0),
+        total_fat: targetItems.reduce((sum, i) => sum + (i.fat || 0), 0)
+      };
+
+      // Update database for both entries
+      await supabase.from('entries').update({ items: sourceItems, ...sourceTotals }).eq('id', sourceEntryId);
+      await supabase.from('entries').update({ items: targetItems, ...targetTotals }).eq('id', targetEntryId);
+
+      // Update state
+      const sourceIndex = updatedEntries[selectedDate].findIndex(e => e.id === sourceEntryId);
+      const targetIndex = updatedEntries[selectedDate].findIndex(e => e.id === targetEntryId);
+
+      updatedEntries[selectedDate][sourceIndex] = {
+        ...sourceEntry,
+        items: sourceItems,
+        totalCalories: sourceTotals.total_calories,
+        totalProtein: sourceTotals.total_protein,
+        totalCarbs: sourceTotals.total_carbs,
+        totalFat: sourceTotals.total_fat
+      };
+
+      updatedEntries[selectedDate][targetIndex] = {
+        ...targetEntry,
+        items: targetItems,
+        totalCalories: targetTotals.total_calories,
+        totalProtein: targetTotals.total_protein,
+        totalCarbs: targetTotals.total_carbs,
+        totalFat: targetTotals.total_fat
+      };
+    }
+
+    setEntries(updatedEntries);
+    setDraggedItem(null);
   };
 
   // Goals
@@ -932,7 +1049,14 @@ Return ONLY valid JSON array:
                 
                 <div className="space-y-2 mb-3">
                   {entry.items.map((item, idx) => (
-                    <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                    <div
+                      key={idx}
+                      draggable={editingEntry !== entry.id && editingNutrition === null}
+                      onDragStart={() => handleDragStart(entry.id, idx)}
+                      onDragOver={handleDragOver}
+                      onDrop={() => handleDrop(entry.id, idx)}
+                      className={`bg-gray-50 rounded-lg p-3 ${editingEntry !== entry.id && editingNutrition === null ? 'cursor-move hover:bg-gray-100 transition-colors' : ''} ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                    >
                       {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
                         <div>
                           <div className="flex justify-between items-start mb-2">
@@ -954,7 +1078,12 @@ Return ONLY valid JSON array:
                       ) : (
                         <div>
                           <div className="flex justify-between items-start mb-2">
-                            <span className="text-gray-800 font-medium">{item.item}</span>
+                            <div className="flex items-center gap-2 flex-1">
+                              {editingEntry !== entry.id && editingNutrition === null && (
+                                <GripVertical size={16} className="text-gray-400 flex-shrink-0" />
+                              )}
+                              <span className="text-gray-800 font-medium">{item.item}</span>
+                            </div>
                             <div className="flex items-center gap-2">
                               <div className="relative" data-source-tooltip="true">
                                 <button
