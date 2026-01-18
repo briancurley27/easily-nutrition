@@ -40,6 +40,7 @@ const CalorieTracker = () => {
   const [goals, setGoals] = useState(null);
   const [showGoalsModal, setShowGoalsModal] = useState(false);
   const [goalInputs, setGoalInputs] = useState({ calories: '', protein: '', carbs: '', fat: '' });
+  const [visibleSourceKey, setVisibleSourceKey] = useState(null);
 
   // Auth listener
   useEffect(() => {
@@ -59,6 +60,18 @@ const CalorieTracker = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!visibleSourceKey) return;
+
+    const handlePointerDown = (event) => {
+      if (event.target.closest('[data-source-tooltip="true"]')) return;
+      setVisibleSourceKey(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [visibleSourceKey]);
 
   // Data loading functions
   const loadEntries = useCallback(async () => {
@@ -875,7 +888,29 @@ Return ONLY valid JSON array:
                           <div className="flex justify-between items-start mb-2">
                             <span className="text-gray-800 font-medium">{item.item}</span>
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-gray-900">{item.error ? '?' : item.calories} cal</span>
+                              <div className="relative" data-source-tooltip="true">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const key = `${entry.id}-${idx}`;
+                                    setVisibleSourceKey(prev => (prev === key ? null : key));
+                                  }}
+                                  onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                  onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                  onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                  onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                  className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
+                                  title={`Source: ${item.source || 'unknown'}`}
+                                  aria-label={`Calories source: ${item.source || 'unknown'}`}
+                                >
+                                  {item.error ? '?' : item.calories} cal
+                                </button>
+                                {visibleSourceKey === `${entry.id}-${idx}` && (
+                                  <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg">
+                                    Source: {item.source || 'unknown'}
+                                  </div>
+                                )}
+                              </div>
                               <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
                             </div>
                           </div>
