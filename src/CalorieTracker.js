@@ -349,11 +349,23 @@ JSON array with ALL items:
 
       // Extract text from OpenAI response format
       let allText = '';
+      let refusalReason = null;
+
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        allText = data.choices[0].message.content;
+        const message = data.choices[0].message;
+        allText = message.content || '';
+        refusalReason = message.refusal;
       }
 
       console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
+
+      // Check for refusal first
+      if (refusalReason) {
+        const errorMsg = `AI refused to process: ${refusalReason}`;
+        console.error('[processFood] AI refusal:', refusalReason);
+        setProcessingError(errorMsg);
+        throw new Error(errorMsg);
+      }
 
       if (!allText) {
         // Include actual API response in error for debugging
