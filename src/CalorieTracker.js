@@ -356,9 +356,11 @@ JSON array with ALL items:
       console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
 
       if (!allText) {
-        const errorMsg = 'No text content in API response';
+        // Include actual API response in error for debugging
+        const responsePreview = JSON.stringify(data).substring(0, 200);
+        const errorMsg = `No text content in API response. API returned: ${responsePreview}`;
         console.error('[processFood]', errorMsg, 'Full response:', data);
-        setProcessingError(errorMsg + '. Check console for details.');
+        setProcessingError(errorMsg);
         throw new Error(errorMsg);
       }
 
