@@ -41,8 +41,7 @@ module.exports = async (req, res) => {
     // Log request details (sanitize messages for privacy)
     console.log('[OpenAI API] Request:', {
       model: body.model,
-      max_tokens: body.max_tokens,
-      tools: body.tools,
+      max_completion_tokens: body.max_completion_tokens,
       message_preview: body.messages?.[0]?.content?.substring(0, 100) + '...'
     });
 
