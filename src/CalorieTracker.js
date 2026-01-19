@@ -413,7 +413,8 @@ JSON array with ALL items:
         retries++;
         if (retries < maxRetries) {
           console.log(`Network error, retrying (${retries}/${maxRetries})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // Exponential backoff
+          const delay = 1000 * retries; // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
       }
