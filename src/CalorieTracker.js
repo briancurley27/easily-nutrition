@@ -255,7 +255,7 @@ const CalorieTracker = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'gpt-5.0-mini',
+          model: 'gpt-5-mini-2025-08-07',
           max_tokens: 600,
           messages: [{
             role: 'user',

@@ -18,7 +18,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 - **Frontend**: React 18 with Create React App
 - **Backend**: Express.js proxy server + Vercel serverless functions
 - **Database & Auth**: Supabase (PostgreSQL + Auth)
-- **AI**: OpenAI API (GPT-5.0 mini) for natural language processing with web search
+- **AI**: OpenAI API (GPT-5 mini) for natural language processing with web search
 - **Charts**: Recharts for 7-day trend visualization
 - **Icons**: Lucide React
 - **Deployment**: Vercel (production), localhost (development)
@@ -27,7 +27,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 1. User enters natural language food description
 2. Frontend sends request to `/api/anthropic/messages`
 3. API proxy/serverless function forwards to OpenAI API with structured prompt
-4. OpenAI GPT-5.0 mini uses web search and knowledge to return structured JSON with nutrition data for each food item
+4. OpenAI GPT-5 mini uses web search and knowledge to return structured JSON with nutrition data for each food item
 5. Frontend displays results and saves to Supabase
 6. User can view history, edit entries, and track progress over time
 
@@ -171,20 +171,20 @@ Express development proxy server:
 ## AI Integration
 
 ### OpenAI API Usage
-The app uses OpenAI GPT-4o mini with structured prompts to:
+The app uses OpenAI GPT-5 mini with structured prompts to:
 1. Parse natural language food descriptions
-2. Look up nutrition data using its training data
+2. Look up nutrition data using its training data and web search
 3. Return structured JSON responses
 
 **Important Notes:**
-- Model: gpt-5.0-mini (latest cost-effective model)
+- Model: gpt-5-mini-2025-08-07 (latest cost-effective model with web search)
 - Rate limiting: Retry logic in place for API errors
 - Web search: Can search the web for brand/restaurant nutrition data
 - Nutrition knowledge: Uses built-in knowledge, web search capability, and USDA data
 - Prompt optimization: Optimized to reduce token usage and minimize costs
 
 ### Recent AI-Related Improvements
-- Switched from Claude to GPT-5.0 mini for cost savings and newer features
+- Switched from Claude to GPT-5 mini for cost savings and newer features
 - Updated response parsing to handle OpenAI's response format
 - Maintained retry logic with exponential backoff for API errors
 - Optimized prompts to reduce token usage and rate limiting
