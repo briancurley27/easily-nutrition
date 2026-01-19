@@ -3,7 +3,7 @@ require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const anthropicHandler = require('./api/anthropic/messages');
+const openaiHandler = require('./api/anthropic/messages');
 
 const app = express();
 const PORT = 3001;
@@ -11,8 +11,8 @@ const PORT = 3001;
 // Parse JSON bodies for API routes
 app.use('/api', express.json());
 
-// API route - handle Anthropic messages
-app.post('/api/anthropic/messages', anthropicHandler);
+// API route - handle OpenAI messages (kept as /api/anthropic/messages for backwards compatibility)
+app.post('/api/anthropic/messages', openaiHandler);
 
 // Proxy everything else to React dev server
 app.use('/', createProxyMiddleware({

@@ -18,7 +18,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 - **Frontend**: React 18 with Create React App
 - **Backend**: Express.js proxy server + Vercel serverless functions
 - **Database & Auth**: Supabase (PostgreSQL + Auth)
-- **AI**: Claude API (Anthropic) for natural language processing
+- **AI**: OpenAI API (GPT-5.0 mini) for natural language processing with web search
 - **Charts**: Recharts for 7-day trend visualization
 - **Icons**: Lucide React
 - **Deployment**: Vercel (production), localhost (development)
@@ -26,8 +26,8 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 ### Application Flow
 1. User enters natural language food description
 2. Frontend sends request to `/api/anthropic/messages`
-3. API proxy/serverless function forwards to Claude API with structured prompt
-4. Claude returns structured JSON with nutrition data for each food item
+3. API proxy/serverless function forwards to OpenAI API with structured prompt
+4. OpenAI GPT-5.0 mini uses web search and knowledge to return structured JSON with nutrition data for each food item
 5. Frontend displays results and saves to Supabase
 6. User can view history, edit entries, and track progress over time
 
@@ -37,7 +37,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 easily-nutrition/
 ├── api/
 │   └── anthropic/
-│       └── messages.js         # Vercel serverless function for Claude API proxy
+│       └── messages.js         # Vercel serverless function for OpenAI API proxy
 ├── public/
 │   ├── index.html              # Main HTML template
 │   └── [icons/manifests]       # PWA assets
@@ -94,11 +94,11 @@ All tables should have RLS enabled with policies ensuring users can only access 
 ```bash
 REACT_APP_SUPABASE_URL=your_supabase_project_url
 REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 ### Required for Vercel Deployment
-- `ANTHROPIC_API_KEY` - Set in Vercel environment variables
+- `OPENAI_API_KEY` - Set in Vercel environment variables
 - Supabase keys are embedded in frontend code (public anon key is safe)
 
 ## Development Workflow
@@ -154,9 +154,9 @@ The main application component containing all core functionality:
 - `session` - Supabase auth session
 
 ### api/anthropic/messages.js
-Serverless function that proxies requests to Claude API:
+Serverless function that proxies requests to OpenAI API:
 - Handles POST requests to `/api/anthropic/messages`
-- Forwards request body to `https://api.anthropic.com/v1/messages`
+- Forwards request body to `https://api.openai.com/v1/chat/completions`
 - Includes API key from environment variables
 - Logs requests/responses for debugging
 - Returns response directly to client
@@ -170,22 +170,25 @@ Express development proxy server:
 
 ## AI Integration
 
-### Claude API Usage
-The app uses Claude with structured prompts to:
+### OpenAI API Usage
+The app uses OpenAI GPT-4o mini with structured prompts to:
 1. Parse natural language food descriptions
-2. Look up nutrition data (with web search capability)
+2. Look up nutrition data using its training data
 3. Return structured JSON responses
 
 **Important Notes:**
-- Model: claude-sonnet-4 (configurable)
-- Rate limiting: Recent commits added retry logic for 429 errors
-- Tool use: Claude can use web search to look up brand/restaurant nutrition
-- Prompt optimization: Recent work focused on reducing prompt length to minimize rate limiting
+- Model: gpt-5.0-mini (latest cost-effective model)
+- Rate limiting: Retry logic in place for API errors
+- Web search: Can search the web for brand/restaurant nutrition data
+- Nutrition knowledge: Uses built-in knowledge, web search capability, and USDA data
+- Prompt optimization: Optimized to reduce token usage and minimize costs
 
 ### Recent AI-Related Improvements
-- Added retry logic with exponential backoff for API errors (ec4a069)
-- Optimized prompts to reduce token usage and rate limiting (d44280e)
-- Fixed issue where AI was skipping food items - emphasized ALL items must be included (45d7a19, 1dd2cf0)
+- Switched from Claude to GPT-5.0 mini for cost savings and newer features
+- Updated response parsing to handle OpenAI's response format
+- Maintained retry logic with exponential backoff for API errors
+- Optimized prompts to reduce token usage and rate limiting
+- Added web search capability for accurate brand nutrition lookups
 
 ## Important Patterns & Conventions
 
@@ -200,8 +203,8 @@ The app uses Claude with structured prompts to:
 - Ensures consistent lookups regardless of capitalization/spacing
 
 ### Data Flow
-1. User input → Claude API (via proxy)
-2. Claude response → Frontend state
+1. User input → OpenAI API (via proxy)
+2. OpenAI response → Frontend state
 3. Frontend state → Supabase (automatic save)
 4. Supabase → Frontend state (on load/auth change)
 
@@ -226,9 +229,10 @@ The app uses Claude with structured prompts to:
 
 ### Modifying the AI Prompt
 - Edit the prompt construction in `CalorieTracker.js`
-- Look for the Claude API call (search for `/api/anthropic/messages`)
+- Look for the OpenAI API call (search for `/api/anthropic/messages`)
 - Be mindful of prompt length to avoid rate limiting
 - Always emphasize ALL items must be processed
+- Mention web search for brand items to get accurate nutrition data
 
 ## Known Issues & Gotchas
 
@@ -238,7 +242,7 @@ The app uses Claude with structured prompts to:
 **Files**: src/CalorieTracker.js (commits 45d7a19, 1dd2cf0)
 
 ### Rate Limiting
-**Issue**: Anthropic API returns 429 errors during heavy usage
+**Issue**: API returns 429 errors during heavy usage
 **Solution**: Optimized prompt length, added retry logic with exponential backoff
 **Files**: api/anthropic/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
 
@@ -249,10 +253,10 @@ The app uses Claude with structured prompts to:
 
 ## Security Considerations
 
-- **API Keys**: Never commit `.env.local` or expose `ANTHROPIC_API_KEY`
+- **API Keys**: Never commit `.env.local` or expose `OPENAI_API_KEY`
 - **RLS**: All Supabase tables must have Row Level Security enabled
 - **Auth**: Supabase handles authentication - trust `session.user.id`
-- **Input Validation**: User input sent to AI - Claude handles validation
+- **Input Validation**: User input sent to AI - OpenAI handles validation
 - **CORS**: API proxy prevents exposing API keys to client
 
 ## Future Improvements
@@ -270,7 +274,7 @@ Potential areas for enhancement:
 ## Resources
 
 - [Supabase Documentation](https://supabase.com/docs)
-- [Claude API Documentation](https://docs.anthropic.com)
+- [OpenAI API Documentation](https://platform.openai.com/docs)
 - [React Documentation](https://react.dev)
 - [Recharts Documentation](https://recharts.org)
 - [Lucide Icons](https://lucide.dev)

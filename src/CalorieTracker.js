@@ -255,16 +255,15 @@ const CalorieTracker = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
+          model: 'gpt-5.0-mini',
           max_tokens: 600,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{
             role: 'user',
             content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
 
-CRITICAL: Include ALL items, even if from different brands. Search each separately.
-- Brand items (Chick-fil-A, Nature's Bakery, etc): web_search
-- Generic (banana, egg): USDA${correctionsContext}
+CRITICAL: Include ALL items, even if from different brands. Use web search and your knowledge to look up accurate nutrition data.
+- Brand items (Chick-fil-A, Nature's Bakery, etc): Search for exact brand nutrition data
+- Generic (banana, egg): Use USDA standards${correctionsContext}
 
 JSON array with ALL items:
 [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
@@ -282,19 +281,15 @@ JSON array with ALL items:
 
       const data = await response.json();
       console.log('[processFood] API response structure:', {
-        hasContent: !!data.content,
-        contentLength: data.content?.length,
-        contentTypes: data.content?.map(b => b.type)
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        hasMessage: !!data.choices?.[0]?.message
       });
 
-      // Extract text from all text blocks
+      // Extract text from OpenAI response format
       let allText = '';
-      if (data.content) {
-        for (const block of data.content) {
-          if (block.type === 'text') {
-            allText += block.text + '\n';
-          }
-        }
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        allText = data.choices[0].message.content;
       }
 
       console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
