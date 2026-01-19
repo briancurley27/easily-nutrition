@@ -44,6 +44,7 @@ const CalorieTracker = () => {
   const [processingError, setProcessingError] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null); // { entryId, itemIndex }
   const [touchDragState, setTouchDragState] = useState(null); // { entryId, itemIndex, startY, currentY }
+  const [dragPreview, setDragPreview] = useState(null); // { x, y, item } for visual feedback
 
   // Auth listener
   useEffect(() => {
@@ -597,12 +598,36 @@ JSON array with ALL items:
   };
 
   // Drag and drop for reordering items
-  const handleDragStart = (entryId, itemIndex) => {
+  const handleDragStart = (e, entryId, itemIndex) => {
     setDraggedItem({ entryId, itemIndex });
+
+    // Get the item data for preview
+    const entry = entries[selectedDate]?.find(e => e.id === entryId);
+    if (entry && entry.items[itemIndex]) {
+      setDragPreview({
+        x: e.clientX,
+        y: e.clientY,
+        item: entry.items[itemIndex]
+      });
+    }
   };
 
   const handleDragOver = (e) => {
     e.preventDefault(); // Allow drop
+
+    // Update preview position during drag
+    if (draggedItem && dragPreview) {
+      setDragPreview(prev => ({
+        ...prev,
+        x: e.clientX,
+        y: e.clientY
+      }));
+    }
+  };
+
+  const handleDragEnd = () => {
+    // Clear preview when drag ends (for desktop)
+    setDragPreview(null);
   };
 
   const handleDrop = async (targetEntryId, targetItemIndex) => {
@@ -709,6 +734,7 @@ JSON array with ALL items:
 
     setEntries(updatedEntries);
     setDraggedItem(null);
+    setDragPreview(null);
   };
 
   // Touch event handlers for mobile drag and drop
@@ -726,6 +752,16 @@ JSON array with ALL items:
       isDragging: false // Only set to true after moving a bit
     });
     setDraggedItem({ entryId, itemIndex });
+
+    // Get the item data for preview
+    const entry = entries[selectedDate]?.find(e => e.id === entryId);
+    if (entry && entry.items[itemIndex]) {
+      setDragPreview({
+        x: touch.clientX,
+        y: touch.clientY,
+        item: entry.items[itemIndex]
+      });
+    }
   };
 
   const handleTouchMove = (e) => {
@@ -734,6 +770,15 @@ JSON array with ALL items:
     const touch = e.touches[0];
     const deltaY = Math.abs(touch.clientY - touchDragState.startY);
     const deltaX = Math.abs(touch.clientX - touchDragState.startX);
+
+    // Update preview position
+    if (dragPreview) {
+      setDragPreview(prev => ({
+        ...prev,
+        x: touch.clientX,
+        y: touch.clientY
+      }));
+    }
 
     // If moved more than 10px, consider it a drag and prevent scrolling
     if (deltaY > 10 || deltaX > 10) {
@@ -753,6 +798,7 @@ JSON array with ALL items:
     if (!touchDragState.isDragging) {
       setTouchDragState(null);
       setDraggedItem(null);
+      setDragPreview(null);
       return;
     }
 
@@ -773,6 +819,7 @@ JSON array with ALL items:
 
     setTouchDragState(null);
     setDraggedItem(null);
+    setDragPreview(null);
   };
 
   // Goals
@@ -1145,8 +1192,9 @@ JSON array with ALL items:
                       data-entry-id={entry.id}
                       data-item-index={idx}
                       draggable={editingEntry !== entry.id && editingNutrition === null}
-                      onDragStart={() => handleDragStart(entry.id, idx)}
+                      onDragStart={(e) => handleDragStart(e, entry.id, idx)}
                       onDragOver={handleDragOver}
+                      onDragEnd={handleDragEnd}
                       onDrop={() => handleDrop(entry.id, idx)}
                       onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
                       onTouchMove={handleTouchMove}
@@ -1285,6 +1333,34 @@ JSON array with ALL items:
           </div>
         </div>
       </div>
+
+      {/* Drag Preview */}
+      {dragPreview && (
+        <div
+          style={{
+            position: 'fixed',
+            left: dragPreview.x,
+            top: dragPreview.y,
+            transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            opacity: 0.9,
+            maxWidth: '300px'
+          }}
+        >
+          <div className="bg-purple-100 border-2 border-purple-400 rounded-lg p-3 shadow-2xl">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-gray-800 font-medium">{dragPreview.item.item}</span>
+              <span className="font-semibold text-purple-600 ml-2">{dragPreview.item.calories} cal</span>
+            </div>
+            <div className="flex gap-3 text-sm text-gray-600">
+              <span>P: {dragPreview.item.protein}g</span>
+              <span>C: {dragPreview.item.carbs}g</span>
+              <span>F: {dragPreview.item.fat}g</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
