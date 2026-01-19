@@ -18,7 +18,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 - **Frontend**: React 18 with Create React App
 - **Backend**: Express.js proxy server + Vercel serverless functions
 - **Database & Auth**: Supabase (PostgreSQL + Auth)
-- **AI**: Claude API (Anthropic) for natural language processing
+- **AI**: OpenAI API (GPT-4o mini) for natural language processing
 - **Charts**: Recharts for 7-day trend visualization
 - **Icons**: Lucide React
 - **Deployment**: Vercel (production), localhost (development)
@@ -26,8 +26,8 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 ### Application Flow
 1. User enters natural language food description
 2. Frontend sends request to `/api/anthropic/messages`
-3. API proxy/serverless function forwards to Claude API with structured prompt
-4. Claude returns structured JSON with nutrition data for each food item
+3. API proxy/serverless function forwards to OpenAI API with structured prompt
+4. OpenAI GPT-4o mini returns structured JSON with nutrition data for each food item
 5. Frontend displays results and saves to Supabase
 6. User can view history, edit entries, and track progress over time
 
@@ -37,7 +37,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 easily-nutrition/
 ├── api/
 │   └── anthropic/
-│       └── messages.js         # Vercel serverless function for Claude API proxy
+│       └── messages.js         # Vercel serverless function for OpenAI API proxy
 ├── public/
 │   ├── index.html              # Main HTML template
 │   └── [icons/manifests]       # PWA assets
@@ -94,11 +94,11 @@ All tables should have RLS enabled with policies ensuring users can only access 
 ```bash
 REACT_APP_SUPABASE_URL=your_supabase_project_url
 REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 ### Required for Vercel Deployment
-- `ANTHROPIC_API_KEY` - Set in Vercel environment variables
+- `OPENAI_API_KEY` - Set in Vercel environment variables
 - Supabase keys are embedded in frontend code (public anon key is safe)
 
 ## Development Workflow
@@ -154,9 +154,9 @@ The main application component containing all core functionality:
 - `session` - Supabase auth session
 
 ### api/anthropic/messages.js
-Serverless function that proxies requests to Claude API:
+Serverless function that proxies requests to OpenAI API:
 - Handles POST requests to `/api/anthropic/messages`
-- Forwards request body to `https://api.anthropic.com/v1/messages`
+- Forwards request body to `https://api.openai.com/v1/chat/completions`
 - Includes API key from environment variables
 - Logs requests/responses for debugging
 - Returns response directly to client
@@ -170,22 +170,23 @@ Express development proxy server:
 
 ## AI Integration
 
-### Claude API Usage
-The app uses Claude with structured prompts to:
+### OpenAI API Usage
+The app uses OpenAI GPT-4o mini with structured prompts to:
 1. Parse natural language food descriptions
-2. Look up nutrition data (with web search capability)
+2. Look up nutrition data using its training data
 3. Return structured JSON responses
 
 **Important Notes:**
-- Model: claude-sonnet-4 (configurable)
-- Rate limiting: Recent commits added retry logic for 429 errors
-- Tool use: Claude can use web search to look up brand/restaurant nutrition
-- Prompt optimization: Recent work focused on reducing prompt length to minimize rate limiting
+- Model: gpt-4o-mini (cost-effective and fast)
+- Rate limiting: Retry logic in place for API errors
+- Nutrition knowledge: Uses built-in knowledge of brand/restaurant nutrition and USDA data
+- Prompt optimization: Optimized to reduce token usage and minimize costs
 
 ### Recent AI-Related Improvements
-- Added retry logic with exponential backoff for API errors (ec4a069)
-- Optimized prompts to reduce token usage and rate limiting (d44280e)
-- Fixed issue where AI was skipping food items - emphasized ALL items must be included (45d7a19, 1dd2cf0)
+- Switched from Claude to GPT-4o mini for cost savings
+- Updated response parsing to handle OpenAI's response format
+- Maintained retry logic with exponential backoff for API errors
+- Optimized prompts to reduce token usage and rate limiting
 
 ## Important Patterns & Conventions
 
