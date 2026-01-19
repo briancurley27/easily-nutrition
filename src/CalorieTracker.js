@@ -713,29 +713,48 @@ JSON array with ALL items:
 
   // Touch event handlers for mobile drag and drop
   const handleTouchStart = (e, entryId, itemIndex) => {
+    // Only start drag if not editing
+    if (editingEntry !== null || editingNutrition !== null) return;
+
     const touch = e.touches[0];
     setTouchDragState({
       entryId,
       itemIndex,
       startY: touch.clientY,
-      currentY: touch.clientY
+      currentY: touch.clientY,
+      startX: touch.clientX,
+      isDragging: false // Only set to true after moving a bit
     });
     setDraggedItem({ entryId, itemIndex });
   };
 
   const handleTouchMove = (e) => {
     if (!touchDragState) return;
-    e.preventDefault(); // Prevent scrolling while dragging
 
     const touch = e.touches[0];
-    setTouchDragState({
-      ...touchDragState,
-      currentY: touch.clientY
-    });
+    const deltaY = Math.abs(touch.clientY - touchDragState.startY);
+    const deltaX = Math.abs(touch.clientX - touchDragState.startX);
+
+    // If moved more than 10px, consider it a drag and prevent scrolling
+    if (deltaY > 10 || deltaX > 10) {
+      e.preventDefault();
+      setTouchDragState({
+        ...touchDragState,
+        currentY: touch.clientY,
+        isDragging: true
+      });
+    }
   };
 
   const handleTouchEnd = async (e) => {
     if (!touchDragState) return;
+
+    // Only process if it was actually a drag
+    if (!touchDragState.isDragging) {
+      setTouchDragState(null);
+      setDraggedItem(null);
+      return;
+    }
 
     const touch = e.changedTouches[0];
     const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -1132,6 +1151,7 @@ JSON array with ALL items:
                       onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
                       onTouchMove={handleTouchMove}
                       onTouchEnd={handleTouchEnd}
+                      style={{ touchAction: editingEntry === entry.id || editingNutrition !== null ? 'auto' : 'none' }}
                       className={`bg-gray-50 rounded-lg p-3 ${editingEntry !== entry.id && editingNutrition === null ? 'cursor-move hover:bg-gray-100 transition-colors' : ''} ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
                     >
                       {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
