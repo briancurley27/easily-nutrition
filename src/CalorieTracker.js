@@ -341,23 +341,37 @@ JSON array with ALL items:
       }
 
       const data = await response.json();
-      console.log('[processFood] API response structure:', {
-        hasChoices: !!data.choices,
-        choicesLength: data.choices?.length,
-        hasMessage: !!data.choices?.[0]?.message
-      });
+      console.log('[processFood] Full API response:', JSON.stringify(data, null, 2));
 
       // Extract text from OpenAI response format
       let allText = '';
       let refusalReason = null;
+      let finishReason = null;
 
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         const message = data.choices[0].message;
+        const choice = data.choices[0];
+
         allText = message.content || '';
         refusalReason = message.refusal;
-      }
+        finishReason = choice.finish_reason;
 
-      console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
+        console.log('[processFood] Message details:', {
+          hasContent: !!message.content,
+          contentType: typeof message.content,
+          contentLength: message.content?.length,
+          content: message.content,
+          refusal: message.refusal,
+          finishReason: choice.finish_reason
+        });
+      } else {
+        console.error('[processFood] Unexpected response structure:', {
+          hasChoices: !!data.choices,
+          choicesLength: data.choices?.length,
+          hasMessage: !!data.choices?.[0]?.message,
+          fullData: data
+        });
+      }
 
       // Check for refusal first
       if (refusalReason) {
@@ -367,14 +381,26 @@ JSON array with ALL items:
         throw new Error(errorMsg);
       }
 
-      if (!allText) {
-        // Include actual API response in error for debugging
-        const responsePreview = JSON.stringify(data).substring(0, 200);
-        const errorMsg = `No text content in API response. API returned: ${responsePreview}`;
+      if (!allText || allText.trim() === '') {
+        // Provide detailed error based on finish reason
+        let errorMsg = 'No text content in API response.';
+
+        if (finishReason === 'content_filter') {
+          errorMsg = 'Request was blocked by content filter. Try rephrasing your food description.';
+        } else if (finishReason === 'length') {
+          errorMsg = 'Response was cut off due to length limits. Try entering fewer items at once.';
+        } else if (data.error) {
+          errorMsg = `OpenAI API error: ${data.error.message || JSON.stringify(data.error)}`;
+        } else {
+          errorMsg = `No text content in API response. Finish reason: ${finishReason || 'unknown'}. This may be a temporary API issue - please try again.`;
+        }
+
         console.error('[processFood]', errorMsg, 'Full response:', data);
         setProcessingError(errorMsg);
         throw new Error(errorMsg);
       }
+
+      console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
 
       // Clean markdown code blocks
       let content = allText.trim().replace(/```json\s*/g, '').replace(/```\s*/g, '');
