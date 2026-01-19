@@ -46,7 +46,7 @@ This app calls `/api/anthropic/messages`, which is implemented as a Vercel serve
 ## Features
 
 - Natural language food logging ("2 eggs and toast with butter")
-- AI-powered nutrition lookup
+- AI-powered nutrition lookup with web search capability
 - Daily calorie and macro tracking
 - Optional daily goals
 - 7-day trend visualization
@@ -59,4 +59,4 @@ This app calls `/api/anthropic/messages`, which is implemented as a Vercel serve
 - Supabase (Auth + Database)
 - Recharts (Charts)
 - Lucide React (Icons)
-- OpenAI GPT-4o mini (AI processing)
+- OpenAI GPT-5.0 mini (AI processing with web search)

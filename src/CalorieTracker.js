@@ -255,14 +255,14 @@ const CalorieTracker = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5.0-mini',
           max_tokens: 600,
           messages: [{
             role: 'user',
             content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
 
-CRITICAL: Include ALL items, even if from different brands. Use your knowledge to look up accurate nutrition data.
-- Brand items (Chick-fil-A, Nature's Bakery, etc): Use known nutrition data
+CRITICAL: Include ALL items, even if from different brands. Use web search and your knowledge to look up accurate nutrition data.
+- Brand items (Chick-fil-A, Nature's Bakery, etc): Search for exact brand nutrition data
 - Generic (banana, egg): Use USDA standards${correctionsContext}
 
 JSON array with ALL items:

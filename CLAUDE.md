@@ -18,7 +18,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 - **Frontend**: React 18 with Create React App
 - **Backend**: Express.js proxy server + Vercel serverless functions
 - **Database & Auth**: Supabase (PostgreSQL + Auth)
-- **AI**: OpenAI API (GPT-4o mini) for natural language processing
+- **AI**: OpenAI API (GPT-5.0 mini) for natural language processing with web search
 - **Charts**: Recharts for 7-day trend visualization
 - **Icons**: Lucide React
 - **Deployment**: Vercel (production), localhost (development)
@@ -27,7 +27,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 1. User enters natural language food description
 2. Frontend sends request to `/api/anthropic/messages`
 3. API proxy/serverless function forwards to OpenAI API with structured prompt
-4. OpenAI GPT-4o mini returns structured JSON with nutrition data for each food item
+4. OpenAI GPT-5.0 mini uses web search and knowledge to return structured JSON with nutrition data for each food item
 5. Frontend displays results and saves to Supabase
 6. User can view history, edit entries, and track progress over time
 
@@ -177,16 +177,18 @@ The app uses OpenAI GPT-4o mini with structured prompts to:
 3. Return structured JSON responses
 
 **Important Notes:**
-- Model: gpt-4o-mini (cost-effective and fast)
+- Model: gpt-5.0-mini (latest cost-effective model)
 - Rate limiting: Retry logic in place for API errors
-- Nutrition knowledge: Uses built-in knowledge of brand/restaurant nutrition and USDA data
+- Web search: Can search the web for brand/restaurant nutrition data
+- Nutrition knowledge: Uses built-in knowledge, web search capability, and USDA data
 - Prompt optimization: Optimized to reduce token usage and minimize costs
 
 ### Recent AI-Related Improvements
-- Switched from Claude to GPT-4o mini for cost savings
+- Switched from Claude to GPT-5.0 mini for cost savings and newer features
 - Updated response parsing to handle OpenAI's response format
 - Maintained retry logic with exponential backoff for API errors
 - Optimized prompts to reduce token usage and rate limiting
+- Added web search capability for accurate brand nutrition lookups
 
 ## Important Patterns & Conventions
 
@@ -201,8 +203,8 @@ The app uses OpenAI GPT-4o mini with structured prompts to:
 - Ensures consistent lookups regardless of capitalization/spacing
 
 ### Data Flow
-1. User input → Claude API (via proxy)
-2. Claude response → Frontend state
+1. User input → OpenAI API (via proxy)
+2. OpenAI response → Frontend state
 3. Frontend state → Supabase (automatic save)
 4. Supabase → Frontend state (on load/auth change)
 
@@ -227,9 +229,10 @@ The app uses OpenAI GPT-4o mini with structured prompts to:
 
 ### Modifying the AI Prompt
 - Edit the prompt construction in `CalorieTracker.js`
-- Look for the Claude API call (search for `/api/anthropic/messages`)
+- Look for the OpenAI API call (search for `/api/anthropic/messages`)
 - Be mindful of prompt length to avoid rate limiting
 - Always emphasize ALL items must be processed
+- Mention web search for brand items to get accurate nutrition data
 
 ## Known Issues & Gotchas
 
@@ -239,7 +242,7 @@ The app uses OpenAI GPT-4o mini with structured prompts to:
 **Files**: src/CalorieTracker.js (commits 45d7a19, 1dd2cf0)
 
 ### Rate Limiting
-**Issue**: Anthropic API returns 429 errors during heavy usage
+**Issue**: API returns 429 errors during heavy usage
 **Solution**: Optimized prompt length, added retry logic with exponential backoff
 **Files**: api/anthropic/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
 
@@ -250,10 +253,10 @@ The app uses OpenAI GPT-4o mini with structured prompts to:
 
 ## Security Considerations
 
-- **API Keys**: Never commit `.env.local` or expose `ANTHROPIC_API_KEY`
+- **API Keys**: Never commit `.env.local` or expose `OPENAI_API_KEY`
 - **RLS**: All Supabase tables must have Row Level Security enabled
 - **Auth**: Supabase handles authentication - trust `session.user.id`
-- **Input Validation**: User input sent to AI - Claude handles validation
+- **Input Validation**: User input sent to AI - OpenAI handles validation
 - **CORS**: API proxy prevents exposing API keys to client
 
 ## Future Improvements
@@ -271,7 +274,7 @@ Potential areas for enhancement:
 ## Resources
 
 - [Supabase Documentation](https://supabase.com/docs)
-- [Claude API Documentation](https://docs.anthropic.com)
+- [OpenAI API Documentation](https://platform.openai.com/docs)
 - [React Documentation](https://react.dev)
 - [Recharts Documentation](https://recharts.org)
 - [Lucide Icons](https://lucide.dev)
