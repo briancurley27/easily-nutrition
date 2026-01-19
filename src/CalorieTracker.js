@@ -256,7 +256,7 @@ const CalorieTracker = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-5-mini-2025-08-07',
-          max_tokens: 600,
+          max_completion_tokens: 600,
           messages: [{
             role: 'user',
             content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
