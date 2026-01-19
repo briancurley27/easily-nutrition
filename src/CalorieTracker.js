@@ -16,6 +16,67 @@ const CalorieTracker = () => {
     return name.toLowerCase().trim().replace(/\s+/g, ' ');
   };
 
+  const parseSource = (source) => {
+    if (!source || source === 'unknown' || source === 'error') {
+      return { displayName: source || 'unknown', url: null };
+    }
+
+    // Handle user corrections
+    if (source === 'user correction') {
+      return { displayName: 'User', url: null };
+    }
+
+    // Handle USDA sources
+    if (source.toLowerCase().includes('usda') || source.toLowerCase().includes('fooddata central')) {
+      return { displayName: 'USDA', url: 'https://fdc.nal.usda.gov/' };
+    }
+
+    // Try to extract URL from the source
+    const urlMatch = source.match(/(https?:\/\/[^\s,)]+)/);
+
+    if (urlMatch) {
+      const url = urlMatch[1];
+      // Extract domain/brand name from URL
+      try {
+        const urlObj = new URL(url);
+        let domain = urlObj.hostname.replace('www.', '');
+
+        // Get the main part of the domain (e.g., "mcdonalds" from "mcdonalds.com")
+        const mainDomain = domain.split('.')[0];
+
+        // Capitalize first letter
+        const displayName = mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
+
+        return { displayName, url };
+      } catch (e) {
+        // If URL parsing fails, try to extract domain manually
+        const domainMatch = url.match(/\/\/([^/]+)/);
+        if (domainMatch) {
+          const domain = domainMatch[1].replace('www.', '').split('.')[0];
+          const displayName = domain.charAt(0).toUpperCase() + domain.slice(1);
+          return { displayName, url };
+        }
+      }
+    }
+
+    // For other sources, try to extract just the main brand/source name
+    // Remove parentheses and everything after them
+    let displayName = source.split('(')[0].trim();
+
+    // If it's still too long, take first few words
+    const words = displayName.split(' ');
+    if (words.length > 2) {
+      displayName = words.slice(0, 2).join(' ');
+    }
+
+    // Limit length
+    if (displayName.length > 30) {
+      displayName = displayName.substring(0, 27) + '...';
+    }
+
+    return { displayName, url: null };
+  };
+
   // Auth states
   const [session, setSession] = useState(null);
   const [authMode, setAuthMode] = useState('login');
@@ -1249,11 +1310,24 @@ JSON array with ALL items:
                                 >
                                   {item.error ? '?' : item.calories} cal
                                 </button>
-                                {visibleSourceKey === `${entry.id}-${idx}` && (
-                                  <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg">
-                                    Source: {item.source || 'unknown'}
-                                  </div>
-                                )}
+                                {visibleSourceKey === `${entry.id}-${idx}` && (() => {
+                                  const { displayName, url } = parseSource(item.source);
+                                  return (
+                                    <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                      Source: {url ? (
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="underline hover:text-purple-300"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {displayName}
+                                        </a>
+                                      ) : displayName}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
                             </div>
