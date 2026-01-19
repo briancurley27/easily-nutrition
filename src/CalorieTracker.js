@@ -43,6 +43,7 @@ const CalorieTracker = () => {
   const [visibleSourceKey, setVisibleSourceKey] = useState(null);
   const [processingError, setProcessingError] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null); // { entryId, itemIndex }
+  const [touchDragState, setTouchDragState] = useState(null); // { entryId, itemIndex, startY, currentY }
 
   // Auth listener
   useEffect(() => {
@@ -710,6 +711,51 @@ JSON array with ALL items:
     setDraggedItem(null);
   };
 
+  // Touch event handlers for mobile drag and drop
+  const handleTouchStart = (e, entryId, itemIndex) => {
+    const touch = e.touches[0];
+    setTouchDragState({
+      entryId,
+      itemIndex,
+      startY: touch.clientY,
+      currentY: touch.clientY
+    });
+    setDraggedItem({ entryId, itemIndex });
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchDragState) return;
+    e.preventDefault(); // Prevent scrolling while dragging
+
+    const touch = e.touches[0];
+    setTouchDragState({
+      ...touchDragState,
+      currentY: touch.clientY
+    });
+  };
+
+  const handleTouchEnd = async (e) => {
+    if (!touchDragState) return;
+
+    const touch = e.changedTouches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+
+    // Find the closest item div
+    const itemDiv = targetElement?.closest('[data-item-drop-target]');
+
+    if (itemDiv) {
+      const targetEntryId = itemDiv.getAttribute('data-entry-id');
+      const targetItemIndex = parseInt(itemDiv.getAttribute('data-item-index'), 10);
+
+      if (targetEntryId && !isNaN(targetItemIndex)) {
+        await handleDrop(targetEntryId, targetItemIndex);
+      }
+    }
+
+    setTouchDragState(null);
+    setDraggedItem(null);
+  };
+
   // Goals
   const openGoalsModal = () => {
     if (goals) {
@@ -1076,10 +1122,16 @@ JSON array with ALL items:
                   {entry.items.map((item, idx) => (
                     <div
                       key={idx}
+                      data-item-drop-target="true"
+                      data-entry-id={entry.id}
+                      data-item-index={idx}
                       draggable={editingEntry !== entry.id && editingNutrition === null}
                       onDragStart={() => handleDragStart(entry.id, idx)}
                       onDragOver={handleDragOver}
                       onDrop={() => handleDrop(entry.id, idx)}
+                      onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
                       className={`bg-gray-50 rounded-lg p-3 ${editingEntry !== entry.id && editingNutrition === null ? 'cursor-move hover:bg-gray-100 transition-colors' : ''} ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
                     >
                       {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
