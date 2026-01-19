@@ -599,6 +599,7 @@ JSON array with ALL items:
 
   // Drag and drop for reordering items
   const handleDragStart = (e, entryId, itemIndex) => {
+    e.stopPropagation(); // Prevent bubbling
     setDraggedItem({ entryId, itemIndex });
 
     // Get the item data for preview
@@ -741,6 +742,8 @@ JSON array with ALL items:
   const handleTouchStart = (e, entryId, itemIndex) => {
     // Only start drag if not editing
     if (editingEntry !== null || editingNutrition !== null) return;
+
+    e.stopPropagation(); // Prevent bubbling
 
     const touch = e.touches[0];
     setTouchDragState({
@@ -1191,16 +1194,9 @@ JSON array with ALL items:
                       data-item-drop-target="true"
                       data-entry-id={entry.id}
                       data-item-index={idx}
-                      draggable={editingEntry !== entry.id && editingNutrition === null}
-                      onDragStart={(e) => handleDragStart(e, entry.id, idx)}
                       onDragOver={handleDragOver}
-                      onDragEnd={handleDragEnd}
                       onDrop={() => handleDrop(entry.id, idx)}
-                      onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
-                      onTouchMove={handleTouchMove}
-                      onTouchEnd={handleTouchEnd}
-                      style={{ touchAction: editingEntry === entry.id || editingNutrition !== null ? 'auto' : 'none' }}
-                      className={`bg-gray-50 rounded-lg p-3 ${editingEntry !== entry.id && editingNutrition === null ? 'cursor-move hover:bg-gray-100 transition-colors' : ''} ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                      className={`bg-gray-50 rounded-lg p-3 ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
                     >
                       {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
                         <div>
@@ -1225,7 +1221,18 @@ JSON array with ALL items:
                           <div className="flex justify-between items-start mb-2">
                             <div className="flex items-center gap-2 flex-1">
                               {editingEntry !== entry.id && editingNutrition === null && (
-                                <GripVertical size={16} className="text-gray-400 flex-shrink-0" />
+                                <div
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, entry.id, idx)}
+                                  onDragEnd={handleDragEnd}
+                                  onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
+                                  onTouchMove={handleTouchMove}
+                                  onTouchEnd={handleTouchEnd}
+                                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
+                                  style={{ touchAction: 'none' }}
+                                >
+                                  <GripVertical size={20} className="text-gray-400 flex-shrink-0" />
+                                </div>
                               )}
                               <span className="text-gray-800 font-medium">{item.item}</span>
                             </div>
