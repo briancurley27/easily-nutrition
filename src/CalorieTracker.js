@@ -50,7 +50,7 @@ const CalorieTracker = () => {
         return { displayName, url };
       } catch (e) {
         // If URL parsing fails, try to extract domain manually
-        const domainMatch = url.match(/\/\/([^\/]+)/);
+        const domainMatch = url.match(/\/\/([^/]+)/);
         if (domainMatch) {
           const domain = domainMatch[1].replace('www.', '').split('.')[0];
           const displayName = domain.charAt(0).toUpperCase() + domain.slice(1);
