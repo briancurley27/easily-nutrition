@@ -59,4 +59,4 @@ This app calls `/api/anthropic/messages`, which is implemented as a Vercel serve
 - Supabase (Auth + Database)
 - Recharts (Charts)
 - Lucide React (Icons)
-- OpenAI GPT-5.0 mini (AI processing with web search)
+- OpenAI GPT-5 mini (AI processing with web search)
