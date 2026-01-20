@@ -344,9 +344,9 @@ FORMATTING RULES:
 2. EMOJI USAGE - BE SELECTIVE:
    - ONLY add emoji if it's truly representative of the food
    - When in doubt, NO EMOJI is better than a misleading emoji
-   - Examples of GOOD emoji use: 🍌 banana, 🍎 apple, 🍕 pizza, 🍟 fries, 🥚 eggs
+   - Examples of GOOD emoji use: 🍌 banana, 🍎 apple, 🍕 pizza, 🍟 fries, 🥚 eggs, 🐟 fish sticks, 🥬 butter lettuce
    - Examples of BAD emoji use: 🥩 for Slim Jim (not representative), 🍪 for Oreos (that's chocolate chip cookie)
-   - Skip emoji for: processed/packaged foods without good match, specific branded items, generic descriptions
+   - Skip emoji for: specific branded snacks (Oreos, Slim Jims, protein bars) without good match
 
 3. QUANTITY FORMATTING:
    - Put quantity NUMBER BEFORE the food name, not after in parentheses
@@ -363,12 +363,12 @@ FORMATTING RULES:
 
 SELECTIVE EMOJI EXAMPLES (only use when truly representative):
 ✓ Good matches: 🍌 banana, 🍎 apple, 🍊 orange, 🍇 grapes, 🍓 strawberry, 🍑 peach, 🥭 mango, 🍉 watermelon
-✓ Good matches: 🥕 carrot, 🥦 broccoli, 🍅 tomato, 🥒 cucumber, 🥔 potato, 🌽 corn
-✓ Good matches: 🍗 chicken wings/drumsticks, 🥚 eggs, 🥩 steak/beef cuts, 🐟 fish/salmon
+✓ Good matches: 🥕 carrot, 🥦 broccoli, 🍅 tomato, 🥒 cucumber, 🥔 potato, 🌽 corn, 🥬 lettuce/leafy greens
+✓ Good matches: 🍗 chicken wings/drumsticks, 🥚 eggs, 🥩 steak/beef cuts, 🐟 fish/salmon/fish sticks
 ✓ Good matches: 🍞 bread/toast, 🥯 bagel, 🥐 croissant, 🍚 rice, 🍝 pasta
 ✓ Good matches: 🍟 fries, 🍕 pizza, 🍔 burger, 🌮 taco, 🌯 burrito, 🌭 hot dog
 ✓ Good matches: 🥛 milk, ☕ coffee, 🧃 juice, 🥤 soda
-✗ Skip emoji for: Oreos, Slim Jims, fish sticks, protein bars, most packaged/processed foods, specific brands without exact match
+✗ Skip emoji for: Oreos, Slim Jims, protein bars, most branded snacks without exact match
 
 FORMATTING EXAMPLES:
 Input: "a banana" → {"item":"🍌 Banana",...}
@@ -376,7 +376,8 @@ Input: "50g of banana" → {"item":"🍌 Banana (50g)",...}
 Input: "green apple" → {"item":"🍎 Green Apple",...}
 Input: "2 eggs" → {"item":"🥚 2 Eggs",...}
 Input: "4 oreos" → {"item":"4 Oreos",...} (no cookie emoji - not representative)
-Input: "10 fish sticks" → {"item":"10 Fish Sticks",...} (no emoji - processed food)
+Input: "10 fish sticks" → {"item":"🐟 10 Fish Sticks",...}
+Input: "2 cups butter lettuce" → {"item":"🥬 2 Cups Butter Lettuce",...}
 Input: "a chicken wing" → {"item":"🍗 1 Chicken Wing",...}
 Input: "chicken breast" → {"item":"🍗 Chicken Breast (6 oz)",...}
 Input: "a slim jim" → {"item":"1 Slim Jim",...} (no emoji - not like any emoji)
