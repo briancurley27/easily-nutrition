@@ -317,22 +317,20 @@ const CalorieTracker = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-5-mini-2025-08-07',
-          max_completion_tokens: 2500,
-          messages: [{
-            role: 'user',
-            content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
+          max_completion_tokens: 4000,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.'
+            },
+            {
+              role: 'user',
+              content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}
 
-RULES:
-1. ALWAYS return ONLY a JSON array - NEVER ask questions or add explanations
-2. If size/details are ambiguous, assume standard/regular serving size
-3. Include ALL items, even if from different brands
-4. For brand/restaurant items: Search for official nutrition PDFs or menu nutrition pages - these are authoritative
-5. Use USDA standards for generic foods (banana, egg, etc.)
-6. ACCURACY IS CRITICAL - do not guess or inflate numbers. If unsure, use conservative estimates${correctionsContext}
-
-Return ONLY this JSON format, nothing else:
-[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"URL or source name"}]`
-          }]
+Return ONLY a JSON array:
+[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+            }
+          ]
         })
       });
 
@@ -354,16 +352,29 @@ Return ONLY this JSON format, nothing else:
       // Extract text from OpenAI response format
       let allText = '';
       let refusalReason = null;
+      let finishReason = null;
 
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        const message = data.choices[0].message;
-        allText = message.content || '';
-        refusalReason = message.refusal;
+      if (data.choices && data.choices.length > 0) {
+        const choice = data.choices[0];
+        finishReason = choice.finish_reason;
+        if (choice.message) {
+          allText = choice.message.content || '';
+          refusalReason = choice.message.refusal;
+        }
       }
 
       console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
+      console.log('[processFood] Finish reason:', finishReason);
 
-      // Check for refusal first
+      // Check for response truncation (too many items)
+      if (finishReason === 'length' && !allText) {
+        const errorMsg = "That's a lot of food! Try splitting it into smaller entries.";
+        console.error('[processFood] Response truncated - too many items');
+        setProcessingError(errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      // Check for refusal
       if (refusalReason) {
         const errorMsg = `AI refused to process: ${refusalReason}`;
         console.error('[processFood] AI refusal:', refusalReason);
