@@ -36,6 +36,7 @@ module.exports = async (req, res) => {
   }
 
   try {
+    const requestStart = Date.now();
     const body = await getJsonBody(req);
 
     // Log request details (sanitize messages for privacy)
@@ -45,6 +46,8 @@ module.exports = async (req, res) => {
       message_preview: body.messages?.[0]?.content?.substring(0, 100) + '...'
     });
 
+    const apiCallStart = Date.now();
+    console.log('[PERF-API] Starting OpenAI API call');
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -58,12 +61,20 @@ module.exports = async (req, res) => {
       })
     });
 
+    const apiCallEnd = Date.now();
+    const apiCallDuration = ((apiCallEnd - apiCallStart) / 1000).toFixed(2);
+    console.log(`[PERF-API] OpenAI API call completed in ${apiCallDuration}s`);
+
     const responseText = await response.text();
     const contentType = response.headers.get('content-type') || 'application/json';
+
+    const requestEnd = Date.now();
+    const totalDuration = ((requestEnd - requestStart) / 1000).toFixed(2);
 
     // Log response details
     console.log('[OpenAI API] Response Status:', response.status);
     console.log('[OpenAI API] Response Preview:', responseText.substring(0, 500));
+    console.log(`[PERF-API] Total proxy handler time: ${totalDuration}s (OpenAI API: ${apiCallDuration}s)`);
 
     // If error status, log full response
     if (!response.ok) {
