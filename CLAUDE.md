@@ -9,6 +9,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 - **No unit conversion**: Users can use natural measurements and the AI handles conversions
 - **Brand awareness**: AI can look up nutrition data for brand name and chain restaurant foods
 - **Smart estimation**: AI accurately estimates generic foods based on context
+- **Anonymous access**: Users can try the app without creating an account (with optional signup)
 - **History tracking**: App saves and tracks user information to help reach health goals
 - **Cross-device sync**: Data syncs across devices via Supabase
 
@@ -107,19 +108,22 @@ OPENAI_API_KEY=your_openai_api_key
 
 **Option A: Full Stack (Recommended)**
 ```bash
-# Terminal 1: Start React dev server
-npm start
-
-# Terminal 2: Start API proxy server
+# Runs both React dev server and API proxy concurrently
 npm run dev
 
 # Open http://localhost:3001
 ```
 
-**Option B: Frontend Only**
+**Option B: API Server Only**
 ```bash
+# Run only the API proxy server (port 3001)
+npm run server
+```
+
+**Option C: Frontend Only**
+```bash
+# Run only the React dev server (port 3000)
 npm start
-# Open http://localhost:3000
 # Note: API calls won't work without proxy
 ```
 
@@ -138,20 +142,23 @@ npm test         # Run tests (not yet implemented)
 
 ### src/CalorieTracker.js
 The main application component containing all core functionality:
-- **Authentication**: Login/signup UI and Supabase auth integration
-- **Food logging**: Natural language input processing
-- **Entry management**: CRUD operations for food entries
+- **Authentication**: Login/signup UI and Supabase auth integration with anonymous user support
+- **Food logging**: Natural language input processing with emoji display for common foods
+- **Entry management**: CRUD operations for food entries with drag-and-drop reordering
 - **Corrections system**: User-specific nutrition overrides
 - **Goals tracking**: Optional daily calorie/macro goals
 - **Charts**: 7-day trend visualization using Recharts
 - **Date navigation**: Browse entries by date
+- **Anonymous mode**: First-time users can use the app without signing up, with optional signup prompt
 
 **Important State Variables:**
 - `entries` - Object keyed by date (YYYY-MM-DD) containing daily food entries
 - `corrections` - Object keyed by normalized food name with user corrections
 - `goals` - User's daily nutrition goals (nullable)
 - `selectedDate` - Currently viewed date
-- `session` - Supabase auth session
+- `session` - Supabase auth session (null for anonymous users)
+- `showSignupPrompt` - Controls display of signup prompt for anonymous users
+- `hasCompletedFirstEntry` - Tracks if anonymous user has completed their first entry
 
 ### api/openai/messages.js
 Serverless function that proxies requests to OpenAI API:
@@ -187,8 +194,12 @@ The app uses OpenAI GPT-5 mini with structured prompts to:
 - Switched from Claude to GPT-5 mini for cost savings and newer features
 - Updated response parsing to handle OpenAI's response format
 - Maintained retry logic with exponential backoff for API errors
-- Optimized prompts to reduce token usage and rate limiting
+- Optimized prompts to reduce token usage by ~75% with prompt caching
 - Added web search capability for accurate brand nutrition lookups
+- Instructed AI to prefer training data over web search for faster responses
+- Enhanced food display with emoji support for common foods
+- Improved quantity formatting and food name cleanup in AI responses
+- Added performance instrumentation for debugging and optimization
 
 ## Important Patterns & Conventions
 
@@ -202,11 +213,18 @@ The app uses OpenAI GPT-5 mini with structured prompts to:
 - Used for matching user corrections to food items
 - Ensures consistent lookups regardless of capitalization/spacing
 
+### Anonymous User Support
+- Users can use the app without authentication for trial purposes
+- Anonymous entries are stored in-memory only (not persisted to database)
+- Signup prompt appears after first entry completion (timing is dynamic based on entry complexity)
+- Anonymous users have access to all features except persistent storage and cross-device sync
+- Authentication modal can be manually opened to sign up or log in at any time
+
 ### Data Flow
 1. User input → OpenAI API (via proxy)
 2. OpenAI response → Frontend state
-3. Frontend state → Supabase (automatic save)
-4. Supabase → Frontend state (on load/auth change)
+3. Frontend state → Supabase (automatic save for authenticated users, in-memory only for anonymous)
+4. Supabase → Frontend state (on load/auth change for authenticated users)
 
 ### Error Handling
 - Database connection errors: Retry logic implemented

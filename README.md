@@ -18,18 +18,22 @@ Track your daily nutrition with natural language powered by AI.
 
 3. Start the development servers:
 
-   **Option A: With API Routes (Recommended for full testing)**
+   **Option A: Full Stack (Recommended)**
    ```bash
-   # Terminal 1: Start React dev server
-   npm start
-
-   # Terminal 2: Start API proxy server
+   # Runs both React dev server and API proxy concurrently
    npm run dev
    ```
    Then open [http://localhost:3001](http://localhost:3001) in your browser.
 
-   **Option B: Frontend only (UI development)**
+   **Option B: API Server Only**
    ```bash
+   # Run only the API proxy server (port 3001)
+   npm run server
+   ```
+
+   **Option C: Frontend Only**
+   ```bash
+   # Run only the React dev server (port 3000)
    npm start
    ```
    Then open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -47,9 +51,11 @@ This app calls `/api/openai/messages`, which is implemented as a Vercel serverle
 
 - Natural language food logging ("2 eggs and toast with butter")
 - AI-powered nutrition lookup with web search capability
-- Daily calorie and macro tracking
+- Anonymous access (try without signing up)
+- Daily calorie and macro tracking with emoji display
 - Optional daily goals
 - 7-day trend visualization
+- Drag-and-drop entry reordering
 - Cross-device sync with Supabase
 - User corrections that persist
 
