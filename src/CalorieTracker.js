@@ -607,7 +607,7 @@ Return ONLY a JSON array:
         setHasCompletedFirstEntry(true);
         setTimeout(() => {
           setShowSignupPrompt(true);
-        }, 2500); // 2.5 second delay
+        }, 5000); // 5 second delay
       }
     }
 
