@@ -314,23 +314,25 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
-      const response = await fetch('/api/anthropic/messages', {
+      const response = await fetch('/api/openai/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-5-mini-2025-08-07',
-          max_completion_tokens: 600,
-          messages: [{
-            role: 'user',
-            content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
+          max_completion_tokens: 4000,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.'
+            },
+            {
+              role: 'user',
+              content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}
 
-CRITICAL: Include ALL items, even if from different brands. Use web search and your knowledge to look up accurate nutrition data.
-- Brand items (Chick-fil-A, Nature's Bakery, etc): Search for exact brand nutrition data
-- Generic (banana, egg): Use USDA standards${correctionsContext}
-
-JSON array with ALL items:
+Return ONLY a JSON array:
 [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
-          }]
+            }
+          ]
         })
       });
 
@@ -378,7 +380,7 @@ JSON array with ALL items:
         });
       }
 
-      // Check for refusal first
+      // Check for refusal
       if (refusalReason) {
         const errorMsg = `AI refused to process: ${refusalReason}`;
         console.error('[processFood] AI refusal:', refusalReason);

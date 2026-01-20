@@ -51,7 +51,11 @@ module.exports = async (req, res) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${openaiApiKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        model: body.model,
+        messages: body.messages,
+        max_completion_tokens: body.max_completion_tokens
+      })
     });
 
     const responseText = await response.text();

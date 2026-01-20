@@ -37,11 +37,11 @@ Track your daily nutrition with natural language powered by AI.
 
 ## Vercel Deployment
 
-This app calls `/api/anthropic/messages`, which is implemented as a Vercel serverless function.
+This app calls `/api/openai/messages`, which is implemented as a Vercel serverless function.
 
 1. Add the following environment variable in Vercel:
    - `OPENAI_API_KEY`
-2. Deploy the project. The API route lives at `api/anthropic/messages.js`.
+2. Deploy the project. The API route lives at `api/openai/messages.js`.
 
 ## Features
 
