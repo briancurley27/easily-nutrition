@@ -28,75 +28,33 @@ async function testPerformance() {
 
   const totalStart = Date.now();
 
-  // Simulate the exact request that the frontend makes
+  // Simulate the exact request that the frontend makes (OPTIMIZED VERSION)
   const requestBody = {
     model: 'gpt-5-mini-2025-08-07',
     max_completion_tokens: 4000,
     messages: [
       {
         role: 'system',
-        content: 'You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.'
+        content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
+
+FORMATTING RULES:
+1. Clean up food names: Fix typos, capitalize properly, use official brand names
+2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items without exact matches
+3. Quantity: Put number BEFORE name ("2 Eggs" not "Eggs (2)")
+4. Portions: Add assumed portions for ambiguous proteins ("Chicken Breast (6 oz)"), include user-specified weights ("Banana (50g)")
+
+Examples:
+"2 eggs" → {"item":"🥚 2 Eggs","calories":140,"protein":12,"carbs":2,"fat":10,"source":"USDA"}
+"chicken breast" → {"item":"🍗 Chicken Breast (6 oz)","calories":280,"protein":53,"carbs":0,"fat":6,"source":"USDA"}
+"large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries","calories":490,"protein":6,"carbs":66,"fat":23,"source":"McDonald's nutrition"}
+"4 oreos" → {"item":"4 Oreos","calories":160,"protein":2,"carbs":25,"fat":7,"source":"Oreo nutrition"} (no emoji)
+"50g banana" → {"item":"🍌 Banana (50g)","calories":45,"protein":1,"carbs":12,"fat":0,"source":"USDA"}
+
+Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
       },
       {
         role: 'user',
-        content: `Parse "${testFoodInput}" and return nutrition for each item.
-
-FORMATTING RULES:
-1. CLEAN UP food names: Fix typos, capitalize properly, use official brand names (e.g., "macdonald fry" → "McDonald's French Fries")
-
-2. EMOJI USAGE - BE SELECTIVE:
-   - ONLY add emoji if it's truly representative of the food
-   - When in doubt, NO EMOJI is better than a misleading emoji
-   - Examples of GOOD emoji use: 🍌 banana, 🍎 apple, 🍕 pizza, 🍟 fries, 🥚 eggs, 🐟 fish sticks, 🥬 butter lettuce
-   - Examples of BAD emoji use: 🥩 for Slim Jim (not representative), 🍪 for Oreos (that's chocolate chip cookie)
-   - Skip emoji for: specific branded snacks (Oreos, Slim Jims, protein bars) without good match
-
-3. QUANTITY FORMATTING:
-   - Put quantity NUMBER BEFORE the food name, not after in parentheses
-   - CORRECT: "2 Eggs", "4 Oreos", "10 Fish Sticks", "1 Chicken Wing"
-   - WRONG: "Eggs (2)", "Oreo Cookies (4 cookies)", "Fish Sticks (10)", "Chicken Wing (1 wing)"
-   - Use parentheses ONLY for measurement clarification with different units: "Chicken Breast (6 oz)", "Banana (50g)"
-   - For ambiguous proteins (chicken, beef, fish) when user didn't specify amount, ADD portion: "Chicken Breast (6 oz)"
-
-4. PORTION DETAILS:
-   - If user specified portion/weight, include it: "50g of banana" → "Banana (50g)"
-   - For ambiguous items, add assumed portion in parentheses: "chicken breast" → "Chicken Breast (6 oz)"
-   - For countable items, put number before name: "4 oreos" → "4 Oreos"
-   - Don't add technical details for simple items: "banana" → "Banana" NOT "Banana (medium, 118g)"
-
-SELECTIVE EMOJI EXAMPLES (only use when truly representative):
-✓ Good matches: 🍌 banana, 🍎 apple, 🍊 orange, 🍇 grapes, 🍓 strawberry, 🍑 peach, 🥭 mango, 🍉 watermelon
-✓ Good matches: 🥕 carrot, 🥦 broccoli, 🍅 tomato, 🥒 cucumber, 🥔 potato, 🌽 corn, 🥬 lettuce/leafy greens
-✓ Good matches: 🍗 chicken wings/drumsticks, 🥚 eggs, 🥩 steak/beef cuts, 🐟 fish/salmon/fish sticks
-✓ Good matches: 🍞 bread/toast, 🥯 bagel, 🥐 croissant, 🍚 rice, 🍝 pasta
-✓ Good matches: 🍟 fries, 🍕 pizza, 🍔 burger, 🌮 taco, 🌯 burrito, 🌭 hot dog
-✓ Good matches: 🥛 milk, ☕ coffee, 🧃 juice, 🥤 soda
-✗ Skip emoji for: Oreos, Slim Jims, protein bars, most branded snacks without exact match
-
-FORMATTING EXAMPLES:
-Input: "a banana" → {"item":"🍌 Banana",...}
-Input: "50g of banana" → {"item":"🍌 Banana (50g)",...}
-Input: "green apple" → {"item":"🍎 Green Apple",...}
-Input: "2 eggs" → {"item":"🥚 2 Eggs",...}
-Input: "4 oreos" → {"item":"4 Oreos",...} (no cookie emoji - not representative)
-Input: "10 fish sticks" → {"item":"🐟 10 Fish Sticks",...}
-Input: "2 cups butter lettuce" → {"item":"🥬 2 Cups Butter Lettuce",...}
-Input: "a chicken wing" → {"item":"🍗 1 Chicken Wing",...}
-Input: "chicken breast" → {"item":"🍗 Chicken Breast (6 oz)",...}
-Input: "a slim jim" → {"item":"1 Slim Jim",...} (no emoji - not like any emoji)
-Input: "1 med macdonald fry" → {"item":"🍟 Large McDonald's French Fries",...}
-Input: "large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries",...}
-Input: "chick fil a waffle fries" → {"item":"🍟 Chick-fil-A Waffle Fries",...}
-Input: "sweet potato fries" → {"item":"🍠 Sweet Potato Fries",...}
-Input: "chicken soup" → {"item":"🍲 Chicken Soup",...}
-Input: "slice of pepperoni pizza" → {"item":"🍕 1 Slice Pepperoni Pizza",...}
-Input: "cup of white rice" → {"item":"🍚 1 Cup White Rice",...}
-Input: "6 oz salmon" → {"item":"🐟 Salmon (6 oz)",...}
-Input: "ribeye steak" → {"item":"🥩 Ribeye Steak (8 oz)",...}
-Input: "cup of milk" → {"item":"🥛 1 Cup Milk",...}
-
-Return ONLY a JSON array:
-[{"item":"optional emoji + clean name with quantity before","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+        content: `Parse "${testFoodInput}" and return nutrition for each item.`
       }
     ]
   };
