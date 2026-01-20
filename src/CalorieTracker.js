@@ -312,22 +312,26 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
-      const response = await fetch('/api/anthropic/messages', {
+      const response = await fetch('/api/openai/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-5-mini-2025-08-07',
-          max_completion_tokens: 600,
+          max_completion_tokens: 2500,
           messages: [{
             role: 'user',
             content: `Parse "${foodText}" - return nutrition for EVERY item mentioned.
 
-CRITICAL: Include ALL items, even if from different brands. Use web search and your knowledge to look up accurate nutrition data.
-- Brand items (Chick-fil-A, Nature's Bakery, etc): Search for exact brand nutrition data
-- Generic (banana, egg): Use USDA standards${correctionsContext}
+RULES:
+1. ALWAYS return ONLY a JSON array - NEVER ask questions or add explanations
+2. If size/details are ambiguous, assume standard/regular serving size
+3. Include ALL items, even if from different brands
+4. For brand/restaurant items: Search for official nutrition PDFs or menu nutrition pages - these are authoritative
+5. Use USDA standards for generic foods (banana, egg, etc.)
+6. ACCURACY IS CRITICAL - do not guess or inflate numbers. If unsure, use conservative estimates${correctionsContext}
 
-JSON array with ALL items:
-[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+Return ONLY this JSON format, nothing else:
+[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"URL or source name"}]`
           }]
         })
       });

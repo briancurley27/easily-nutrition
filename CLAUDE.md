@@ -25,7 +25,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 
 ### Application Flow
 1. User enters natural language food description
-2. Frontend sends request to `/api/anthropic/messages`
+2. Frontend sends request to `/api/openai/messages`
 3. API proxy/serverless function forwards to OpenAI API with structured prompt
 4. OpenAI GPT-5 mini uses web search and knowledge to return structured JSON with nutrition data for each food item
 5. Frontend displays results and saves to Supabase
@@ -36,7 +36,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 ```
 easily-nutrition/
 ├── api/
-│   └── anthropic/
+│   └── OpenAI/
 │       └── messages.js         # Vercel serverless function for OpenAI API proxy
 ├── public/
 │   ├── index.html              # Main HTML template
@@ -153,9 +153,9 @@ The main application component containing all core functionality:
 - `selectedDate` - Currently viewed date
 - `session` - Supabase auth session
 
-### api/anthropic/messages.js
+### api/OpenAI/messages.js
 Serverless function that proxies requests to OpenAI API:
-- Handles POST requests to `/api/anthropic/messages`
+- Handles POST requests to `/api/openai/messages`
 - Forwards request body to `https://api.openai.com/v1/chat/completions`
 - Includes API key from environment variables
 - Logs requests/responses for debugging
@@ -164,7 +164,7 @@ Serverless function that proxies requests to OpenAI API:
 ### server.js
 Express development proxy server:
 - Runs on port 3001
-- Handles `/api/anthropic/messages` route locally
+- Handles `/api/openai/messages` route locally
 - Proxies all other requests to React dev server (port 3000)
 - Enables hot reload via WebSocket proxy
 
@@ -229,7 +229,7 @@ The app uses OpenAI GPT-5 mini with structured prompts to:
 
 ### Modifying the AI Prompt
 - Edit the prompt construction in `CalorieTracker.js`
-- Look for the OpenAI API call (search for `/api/anthropic/messages`)
+- Look for the OpenAI API call (search for `/api/openai/messages`)
 - Be mindful of prompt length to avoid rate limiting
 - Always emphasize ALL items must be processed
 - Mention web search for brand items to get accurate nutrition data
@@ -244,7 +244,7 @@ The app uses OpenAI GPT-5 mini with structured prompts to:
 ### Rate Limiting
 **Issue**: API returns 429 errors during heavy usage
 **Solution**: Optimized prompt length, added retry logic with exponential backoff
-**Files**: api/anthropic/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
+**Files**: api/OpenAI/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
 
 ### Database Connection Errors
 **Issue**: Intermittent connection issues with Supabase
@@ -270,6 +270,7 @@ Potential areas for enhancement:
 - Meal presets and favorites
 - Integration with fitness trackers
 - Mobile app (React Native)
+- Global corrections system: Admin-curated corrections table that applies accurate nutrition data (e.g., AMC popcorn = 550 cal) to all users, overriding inaccurate AI responses. Doesn't save tokens but improves accuracy for known-bad items.
 
 ## Resources
 
