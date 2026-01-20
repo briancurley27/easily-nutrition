@@ -108,6 +108,11 @@ const CalorieTracker = () => {
   const [touchDragState, setTouchDragState] = useState(null); // { entryId, itemIndex, startY, currentY }
   const [dragPreview, setDragPreview] = useState(null); // { x, y, item } for visual feedback
 
+  // Anonymous user states
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [hasCompletedFirstEntry, setHasCompletedFirstEntry] = useState(false);
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -118,9 +123,13 @@ const CalorieTracker = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (!session) {
-        setEntries({});
-        setCorrections({});
-        setGoals(null);
+        // Only clear if user logged out (not on initial load)
+        if (_event === 'SIGNED_OUT') {
+          setEntries({});
+          setCorrections({});
+          setGoals(null);
+          setHasCompletedFirstEntry(false);
+        }
       }
     });
 
@@ -507,9 +516,8 @@ Return ONLY a JSON array:
 
     const foodItems = await processFood(currentInput);
     const now = new Date();
-    
+
     const newEntry = {
-      user_id: session.user.id,
       date: selectedDate,
       timestamp: now.toISOString(),
       local_time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
@@ -521,55 +529,91 @@ Return ONLY a JSON array:
       total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
     };
 
-    let data, error;
-    let retries = 0;
-    const maxRetries = 3;
+    if (session?.user) {
+      // Authenticated user: save to Supabase
+      newEntry.user_id = session.user.id;
 
-    // Retry logic for network errors
-    while (retries < maxRetries) {
-      const result = await supabase.from('entries').insert(newEntry).select().single();
-      data = result.data;
-      error = result.error;
+      let data, error;
+      let retries = 0;
+      const maxRetries = 3;
 
-      if (!error) break;
+      // Retry logic for network errors
+      while (retries < maxRetries) {
+        const result = await supabase.from('entries').insert(newEntry).select().single();
+        data = result.data;
+        error = result.error;
 
-      // If it's a network error, retry after a delay
-      if (error.message?.includes('Load failed') || error.message?.includes('network')) {
-        retries++;
-        if (retries < maxRetries) {
-          console.log(`Network error, retrying (${retries}/${maxRetries})...`);
-          const delay = 1000 * retries; // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
+        if (!error) break;
+
+        // If it's a network error, retry after a delay
+        if (error.message?.includes('Load failed') || error.message?.includes('network')) {
+          retries++;
+          if (retries < maxRetries) {
+            console.log(`Network error, retrying (${retries}/${maxRetries})...`);
+            const delay = 1000 * retries; // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
         }
+        break;
       }
-      break;
-    }
 
-    if (error) {
-      console.error('Error saving entry:', error);
-      setProcessingError({
-        message: 'Failed to save your entry. Your food was processed but not saved.',
-        details: `Database error: ${error.message || 'Unknown database connection error'}\n\nError object: ${JSON.stringify(error, null, 2)}`
+      if (error) {
+        console.error('Error saving entry:', error);
+        setProcessingError({
+          message: 'Failed to save your entry. Your food was processed but not saved.',
+          details: `Database error: ${error.message || 'Unknown database connection error'}\n\nError object: ${JSON.stringify(error, null, 2)}`
+        });
+        return;
+      }
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: data.id,
+        timestamp: data.timestamp,
+        localTime: data.local_time,
+        input: data.input,
+        items: data.items,
+        totalCalories: data.total_calories,
+        totalProtein: data.total_protein,
+        totalCarbs: data.total_carbs,
+        totalFat: data.total_fat
       });
-      return;
+
+      setEntries(updatedEntries);
+    } else {
+      // Anonymous user: keep in memory only with temporary ID
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: tempId,
+        timestamp: newEntry.timestamp,
+        localTime: newEntry.local_time,
+        input: newEntry.input,
+        items: newEntry.items,
+        totalCalories: newEntry.total_calories,
+        totalProtein: newEntry.total_protein,
+        totalCarbs: newEntry.total_carbs,
+        totalFat: newEntry.total_fat
+      });
+
+      setEntries(updatedEntries);
+
+      // Show signup prompt after first entry (with delay so users can see results)
+      if (!hasCompletedFirstEntry) {
+        setHasCompletedFirstEntry(true);
+        // Dynamic delay based on number of items: 5s for 1 item, +0.5s per additional item, max 10s
+        const itemCount = foodItems.length;
+        const delayMs = Math.min(5000 + (itemCount - 1) * 500, 10000);
+        setTimeout(() => {
+          setShowSignupPrompt(true);
+        }, delayMs);
+      }
     }
 
-    const updatedEntries = { ...entries };
-    if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
-    updatedEntries[selectedDate].push({
-      id: data.id,
-      timestamp: data.timestamp,
-      localTime: data.local_time,
-      input: data.input,
-      items: data.items,
-      totalCalories: data.total_calories,
-      totalProtein: data.total_protein,
-      totalCarbs: data.total_carbs,
-      totalFat: data.total_fat
-    });
-    
-    setEntries(updatedEntries);
     setCurrentInput('');
   };
 
@@ -581,12 +625,16 @@ Return ONLY a JSON array:
   };
 
   const deleteEntry = async (date, entryId) => {
-    const { error } = await supabase.from('entries').delete().eq('id', entryId);
-    if (error) {
-      console.error('Error deleting entry:', error);
-      return;
+    // Only delete from database if user is authenticated
+    if (session?.user) {
+      const { error } = await supabase.from('entries').delete().eq('id', entryId);
+      if (error) {
+        console.error('Error deleting entry:', error);
+        return;
+      }
     }
 
+    // Update local state (works for both authenticated and anonymous)
     const updatedEntries = { ...entries };
     updatedEntries[date] = updatedEntries[date].filter(entry => entry.id !== entryId);
     if (updatedEntries[date].length === 0) delete updatedEntries[date];
@@ -607,7 +655,7 @@ Return ONLY a JSON array:
     if (!editText.trim() || isProcessing) return;
 
     const foodItems = await processFood(editText);
-    
+
     const updates = {
       input: editText,
       items: foodItems,
@@ -617,15 +665,19 @@ Return ONLY a JSON array:
       total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
     };
 
-    const { error } = await supabase.from('entries').update(updates).eq('id', entryId);
-    if (error) {
-      console.error('Error updating entry:', error);
-      return;
+    // Only update database if user is authenticated
+    if (session?.user) {
+      const { error } = await supabase.from('entries').update(updates).eq('id', entryId);
+      if (error) {
+        console.error('Error updating entry:', error);
+        return;
+      }
     }
 
+    // Update local state (works for both authenticated and anonymous)
     const updatedEntries = { ...entries };
     const entryIndex = updatedEntries[date].findIndex(e => e.id === entryId);
-    
+
     if (entryIndex !== -1) {
       updatedEntries[date][entryIndex] = {
         ...updatedEntries[date][entryIndex],
@@ -637,7 +689,7 @@ Return ONLY a JSON array:
         totalFat: updates.total_fat
       };
     }
-    
+
     setEntries(updatedEntries);
     setEditingEntry(null);
     setEditText('');
@@ -662,31 +714,35 @@ Return ONLY a JSON array:
   const saveNutritionCorrection = async (date, entryId, itemIndex) => {
     const entry = entries[date].find(e => e.id === entryId);
     if (!entry || !entry.items[itemIndex]) return;
-    
+
     const item = entry.items[itemIndex];
     const correctionKey = normalizeFoodName(item.item);
-    
-    await supabase.from('corrections').upsert({
-      user_id: session.user.id,
-      food_key: correctionKey,
-      calories: parseInt(nutritionEditValues.calories) || 0,
-      protein: parseInt(nutritionEditValues.protein) || 0,
-      carbs: parseInt(nutritionEditValues.carbs) || 0,
-      fat: parseInt(nutritionEditValues.fat) || 0
-    }, { onConflict: 'user_id,food_key' });
 
-    const newCorrections = {
-      ...corrections,
-      [correctionKey]: {
+    // Only save correction to database if user is authenticated
+    if (session?.user) {
+      await supabase.from('corrections').upsert({
+        user_id: session.user.id,
+        food_key: correctionKey,
         calories: parseInt(nutritionEditValues.calories) || 0,
         protein: parseInt(nutritionEditValues.protein) || 0,
         carbs: parseInt(nutritionEditValues.carbs) || 0,
-        fat: parseInt(nutritionEditValues.fat) || 0,
-        source: 'user correction'
-      }
-    };
-    setCorrections(newCorrections);
+        fat: parseInt(nutritionEditValues.fat) || 0
+      }, { onConflict: 'user_id,food_key' });
 
+      const newCorrections = {
+        ...corrections,
+        [correctionKey]: {
+          calories: parseInt(nutritionEditValues.calories) || 0,
+          protein: parseInt(nutritionEditValues.protein) || 0,
+          carbs: parseInt(nutritionEditValues.carbs) || 0,
+          fat: parseInt(nutritionEditValues.fat) || 0,
+          source: 'user correction'
+        }
+      };
+      setCorrections(newCorrections);
+    }
+
+    // Update the item in the entry
     const updatedItems = [...entry.items];
     updatedItems[itemIndex] = {
       ...item,
@@ -694,7 +750,7 @@ Return ONLY a JSON array:
       protein: parseInt(nutritionEditValues.protein) || 0,
       carbs: parseInt(nutritionEditValues.carbs) || 0,
       fat: parseInt(nutritionEditValues.fat) || 0,
-      source: 'user correction'
+      source: session?.user ? 'user correction' : 'manual edit'
     };
 
     const newTotals = {
@@ -704,8 +760,12 @@ Return ONLY a JSON array:
       total_fat: updatedItems.reduce((sum, i) => sum + (i.fat || 0), 0)
     };
 
-    await supabase.from('entries').update({ items: updatedItems, ...newTotals }).eq('id', entryId);
+    // Only update database if user is authenticated
+    if (session?.user) {
+      await supabase.from('entries').update({ items: updatedItems, ...newTotals }).eq('id', entryId);
+    }
 
+    // Update local state (works for both authenticated and anonymous)
     const updatedEntries = { ...entries };
     const entryIndex = updatedEntries[date].findIndex(e => e.id === entryId);
     if (entryIndex !== -1) {
@@ -794,8 +854,10 @@ Return ONLY a JSON array:
         total_fat: newItems.reduce((sum, i) => sum + (i.fat || 0), 0)
       };
 
-      // Update database
-      await supabase.from('entries').update({ items: newItems, ...newTotals }).eq('id', sourceEntryId);
+      // Update database only if user is authenticated
+      if (session?.user) {
+        await supabase.from('entries').update({ items: newItems, ...newTotals }).eq('id', sourceEntryId);
+      }
 
       // Update state
       const entryIndex = updatedEntries[selectedDate].findIndex(e => e.id === sourceEntryId);
@@ -832,9 +894,11 @@ Return ONLY a JSON array:
         total_fat: targetItems.reduce((sum, i) => sum + (i.fat || 0), 0)
       };
 
-      // Update database for both entries
-      await supabase.from('entries').update({ items: sourceItems, ...sourceTotals }).eq('id', sourceEntryId);
-      await supabase.from('entries').update({ items: targetItems, ...targetTotals }).eq('id', targetEntryId);
+      // Update database for both entries only if user is authenticated
+      if (session?.user) {
+        await supabase.from('entries').update({ items: sourceItems, ...sourceTotals }).eq('id', sourceEntryId);
+        await supabase.from('entries').update({ items: targetItems, ...targetTotals }).eq('id', targetEntryId);
+      }
 
       // Update state
       const sourceIndex = updatedEntries[selectedDate].findIndex(e => e.id === sourceEntryId);
@@ -1058,7 +1122,7 @@ Return ONLY a JSON array:
   };
 
   // Loading state
-  if (isLoading && !session) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 flex items-center justify-center">
         <div className="text-purple-600 text-lg">Loading...</div>
@@ -1066,102 +1130,107 @@ Return ONLY a JSON array:
     );
   }
 
-  // Auth screen
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Easily</h1>
-            <p className="text-gray-600">Track your nutrition with AI</p>
+  // Auth Modal Component
+  const AuthModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">
+              {authMode === 'signup' ? 'Create Account' : authMode === 'reset' ? 'Reset Password' : 'Log In'}
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">Save your data and track across devices</p>
+          </div>
+          <button onClick={() => setShowAuthModal(false)} className="text-gray-500 hover:text-gray-700">
+            <X size={24} />
+          </button>
+        </div>
+
+        {authMessage && (
+          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">{authMessage}</div>
+        )}
+        {authError && (
+          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{authError}</div>
+        )}
+
+        <form onSubmit={handleAuthSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+              required
+            />
           </div>
 
-          {authMessage && (
-            <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">{authMessage}</div>
-          )}
-          {authError && (
-            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{authError}</div>
-          )}
-
-          <form onSubmit={handleAuthSubmit}>
+          {authMode !== 'reset' && (
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                required
-              />
-            </div>
-
-            {authMode !== 'reset' && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none pr-12"
-                    required
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-                {authMode === 'signup' && (
-                  <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters</p>
-                )}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none pr-12"
+                  required
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
-            )}
+              {authMode === 'signup' && (
+                <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters</p>
+              )}
+            </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
-            >
-              {authLoading ? 'Please wait...' : 
-               authMode === 'signup' ? 'Create Account' :
-               authMode === 'reset' ? 'Send Reset Link' : 'Log In'}
-            </button>
-          </form>
+          <button
+            type="submit"
+            disabled={authLoading}
+            className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
+          >
+            {authLoading ? 'Please wait...' :
+             authMode === 'signup' ? 'Create Account' :
+             authMode === 'reset' ? 'Send Reset Link' : 'Log In'}
+          </button>
+        </form>
 
-          <div className="mt-6 text-center text-sm">
-            {authMode === 'login' && (
-              <>
-                <p className="text-gray-600">
-                  Don't have an account?{' '}
-                  <button onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Sign up</button>
-                </p>
-                <p className="text-gray-600 mt-2">
-                  <button onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Forgot password?</button>
-                </p>
-              </>
-            )}
-            {authMode === 'signup' && (
+        <div className="mt-6 text-center text-sm">
+          {authMode === 'login' && (
+            <>
               <p className="text-gray-600">
-                Already have an account?{' '}
-                <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Log in</button>
+                Don't have an account?{' '}
+                <button onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Sign up</button>
               </p>
-            )}
-            {authMode === 'reset' && (
-              <p className="text-gray-600">
-                <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Back to login</button>
+              <p className="text-gray-600 mt-2">
+                <button onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Forgot password?</button>
               </p>
-            )}
-          </div>
+            </>
+          )}
+          {authMode === 'signup' && (
+            <p className="text-gray-600">
+              Already have an account?{' '}
+              <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Log in</button>
+            </p>
+          )}
+          {authMode === 'reset' && (
+            <p className="text-gray-600">
+              <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Back to login</button>
+            </p>
+          )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   // Main app
   return (
@@ -1197,6 +1266,60 @@ Return ONLY a JSON array:
         </div>
       )}
 
+      {/* Signup Prompt Modal */}
+      {showSignupPrompt && !session && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
+            <div className="text-center mb-6">
+              <div className="text-5xl mb-4">🎉</div>
+              <h2 className="text-3xl font-bold text-gray-800 mb-3">Great start!</h2>
+              <p className="text-lg text-gray-700 mb-4">
+                You just logged your first meal! Want to save your progress and track your nutrition over time?
+              </p>
+              <p className="text-gray-600 mb-2">
+                Create a <strong className="text-purple-600">free account</strong> to:
+              </p>
+              <ul className="text-left text-gray-600 space-y-2 mb-6 max-w-md mx-auto">
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-1">✓</span>
+                  <span><strong>Save your entries</strong> — Never lose your nutrition data</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-1">✓</span>
+                  <span><strong>Track your progress</strong> — See trends and reach your goals</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-1">✓</span>
+                  <span><strong>Access anywhere</strong> — Sync across all your devices</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={() => {
+                  setShowSignupPrompt(false);
+                  setAuthMode('signup');
+                  setShowAuthModal(true);
+                }}
+                className="w-full px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-lg rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition shadow-lg"
+              >
+                Sign Up Now
+              </button>
+              <button
+                onClick={() => setShowSignupPrompt(false)}
+                className="text-sm text-gray-500 hover:text-gray-700 transition underline"
+              >
+                Maybe later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Modal */}
+      {showAuthModal && <AuthModal />}
+
       {isLoading && (
         <div className="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-40">
           <div className="text-purple-600 text-lg">Loading your data...</div>
@@ -1208,15 +1331,36 @@ Return ONLY a JSON array:
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Easily</h1>
-            <p className="text-sm text-gray-600">{session.user.email}</p>
+            <p className="text-sm text-gray-600">
+              {session ? session.user.email : 'Track your nutrition with AI'}
+            </p>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={openGoalsModal} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Set daily goals">
-              <Target size={20} /><span className="hidden sm:inline">Goals</span>
-            </button>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition">
-              <LogOut size={20} /><span className="hidden sm:inline">Logout</span>
-            </button>
+            {session ? (
+              <>
+                <button onClick={openGoalsModal} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Set daily goals">
+                  <Target size={20} /><span className="hidden sm:inline">Goals</span>
+                </button>
+                <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition">
+                  <LogOut size={20} /><span className="hidden sm:inline">Logout</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                  className="text-gray-600 hover:text-gray-800 transition font-medium"
+                >
+                  Log In
+                </button>
+                <button
+                  onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition"
+                >
+                  Sign Up
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
