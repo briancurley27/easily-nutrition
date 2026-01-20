@@ -37,6 +37,8 @@ async function testPerformance() {
         role: 'system',
         content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
 
+Prefer training data. Only search web for unknown items.
+
 FORMATTING RULES:
 1. Clean up food names: Fix typos, capitalize properly, use official brand names
 2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items without exact matches
