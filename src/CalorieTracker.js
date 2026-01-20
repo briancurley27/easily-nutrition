@@ -339,6 +339,8 @@ const CalorieTracker = () => {
               role: 'system',
               content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
 
+IMPORTANT: Use your training data and nutrition knowledge for all standard foods and common restaurant items (McDonald's, Burger King, Chick-fil-A, etc.). ONLY search the web for truly unknown items, new products, or when you have zero confidence in the nutrition data.
+
 FORMATTING RULES:
 1. Clean up food names: Fix typos, capitalize properly, use official brand names
 2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items without exact matches
