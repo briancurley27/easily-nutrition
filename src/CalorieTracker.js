@@ -3,6 +3,124 @@ import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRi
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
+// Auth Modal Component - defined outside to prevent re-mounting on state changes
+const AuthModal = ({
+  authMode,
+  setAuthMode,
+  authEmail,
+  setAuthEmail,
+  authPassword,
+  setAuthPassword,
+  authError,
+  setAuthError,
+  authMessage,
+  setAuthMessage,
+  authLoading,
+  showPassword,
+  setShowPassword,
+  handleAuthSubmit,
+  onClose
+}) => (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">
+            {authMode === 'signup' ? 'Create Account' : authMode === 'reset' ? 'Reset Password' : 'Log In'}
+          </h2>
+          <p className="text-sm text-gray-600 mt-1">Save your data and track across devices</p>
+        </div>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <X size={24} />
+        </button>
+      </div>
+
+      {authMessage && (
+        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">{authMessage}</div>
+      )}
+      {authError && (
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{authError}</div>
+      )}
+
+      <form onSubmit={handleAuthSubmit}>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input
+            type="email"
+            value={authEmail}
+            onChange={(e) => setAuthEmail(e.target.value)}
+            placeholder="you@example.com"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+            required
+          />
+        </div>
+
+        {authMode !== 'reset' && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none pr-12"
+                required
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+            {authMode === 'signup' && (
+              <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters</p>
+            )}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={authLoading}
+          className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
+        >
+          {authLoading ? 'Please wait...' :
+           authMode === 'signup' ? 'Create Account' :
+           authMode === 'reset' ? 'Send Reset Link' : 'Log In'}
+        </button>
+      </form>
+
+      <div className="mt-6 text-center text-sm">
+        {authMode === 'login' && (
+          <>
+            <p className="text-gray-600">
+              Don't have an account?{' '}
+              <button onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Sign up</button>
+            </p>
+            <p className="text-gray-600 mt-2">
+              <button onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Forgot password?</button>
+            </p>
+          </>
+        )}
+        {authMode === 'signup' && (
+          <p className="text-gray-600">
+            Already have an account?{' '}
+            <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Log in</button>
+          </p>
+        )}
+        {authMode === 'reset' && (
+          <p className="text-gray-600">
+            <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Back to login</button>
+          </p>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 const CalorieTracker = () => {
   // Helper functions
   const getLocalDateString = (date = new Date()) => {
@@ -1176,108 +1294,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     );
   }
 
-  // Auth Modal Component
-  const AuthModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">
-              {authMode === 'signup' ? 'Create Account' : authMode === 'reset' ? 'Reset Password' : 'Log In'}
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">Save your data and track across devices</p>
-          </div>
-          <button onClick={() => setShowAuthModal(false)} className="text-gray-500 hover:text-gray-700">
-            <X size={24} />
-          </button>
-        </div>
-
-        {authMessage && (
-          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">{authMessage}</div>
-        )}
-        {authError && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{authError}</div>
-        )}
-
-        <form onSubmit={handleAuthSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-              required
-            />
-          </div>
-
-          {authMode !== 'reset' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none pr-12"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-              {authMode === 'signup' && (
-                <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters</p>
-              )}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={authLoading}
-            className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
-          >
-            {authLoading ? 'Please wait...' :
-             authMode === 'signup' ? 'Create Account' :
-             authMode === 'reset' ? 'Send Reset Link' : 'Log In'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          {authMode === 'login' && (
-            <>
-              <p className="text-gray-600">
-                Don't have an account?{' '}
-                <button onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Sign up</button>
-              </p>
-              <p className="text-gray-600 mt-2">
-                <button onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Forgot password?</button>
-              </p>
-            </>
-          )}
-          {authMode === 'signup' && (
-            <p className="text-gray-600">
-              Already have an account?{' '}
-              <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Log in</button>
-            </p>
-          )}
-          {authMode === 'reset' && (
-            <p className="text-gray-600">
-              <button onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage(''); }} className="text-purple-600 hover:text-purple-800 font-medium">Back to login</button>
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
   // Main app
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -1364,7 +1380,25 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       )}
 
       {/* Auth Modal */}
-      {showAuthModal && <AuthModal />}
+      {showAuthModal && (
+        <AuthModal
+          authMode={authMode}
+          setAuthMode={setAuthMode}
+          authEmail={authEmail}
+          setAuthEmail={setAuthEmail}
+          authPassword={authPassword}
+          setAuthPassword={setAuthPassword}
+          authError={authError}
+          setAuthError={setAuthError}
+          authMessage={authMessage}
+          setAuthMessage={setAuthMessage}
+          authLoading={authLoading}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          handleAuthSubmit={handleAuthSubmit}
+          onClose={() => setShowAuthModal(false)}
+        />
+      )}
 
       {isLoading && (
         <div className="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-40">
