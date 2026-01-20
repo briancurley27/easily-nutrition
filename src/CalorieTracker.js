@@ -338,8 +338,45 @@ const CalorieTracker = () => {
               role: 'user',
               content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}
 
+FORMATTING RULES:
+1. CLEAN UP food names: Fix typos, capitalize properly, use official brand names (e.g., "macdonald fry" → "McDonald's French Fries")
+2. ADD EMOJI before each food name (choose contextually appropriate emoji - see examples below)
+3. PORTION DETAILS:
+   - If user specified a portion (e.g., "50g of banana", "6 oz chicken"), INCLUDE it in the name
+   - For ambiguous protein items (chicken, beef, fish), INCLUDE assumed portion in parentheses (e.g., "🍗 Chicken Breast (6 oz)")
+   - For simple/obvious items (fruits, single eggs, slices), DO NOT include weight/size details (e.g., "🍌 Banana" NOT "🍌 Banana (medium, 118g)")
+
+EMOJI GUIDELINES:
+- Fruits: 🍌 banana, 🍎 apple, 🍊 orange, 🍇 grapes, 🍓 strawberry, 🍑 peach, 🥭 mango, 🍉 watermelon, 🫐 blueberry
+- Vegetables: 🥕 carrot, 🥦 broccoli, 🥬 lettuce/salad, 🍅 tomato, 🥒 cucumber, 🫑 bell pepper, 🥔 potato, 🧅 onion, 🌽 corn
+- Proteins: 🍗 chicken (breast, nuggets, tenders, wings), 🥩 beef/steak, 🍖 ribs/pork, 🐟 fish, 🦐 shrimp, 🥚 eggs
+- Prepared chicken: 🍗 grilled/fried chicken, 🍲 chicken soup, 🥣 chicken noodle soup
+- Grains/Bread: 🍞 bread/toast, 🥖 baguette, 🥯 bagel, 🥐 croissant, 🍚 rice (white/brown), 🍝 pasta
+- Fast food: 🍟 fries (McDonald's, Chick-fil-A waffle, truffle, steak fries), 🍠 sweet potato fries, 🍕 pizza, 🍔 burger, 🌮 taco, 🌯 burrito, 🌭 hot dog
+- Snacks: 🍿 popcorn, 🍪 cookies, 🍰 cake, 🧁 cupcake, 🍩 donut, 🍫 chocolate, 🍬 candy
+- Drinks: ☕ coffee, 🥤 soda, 🧃 juice, 🥛 milk, 🍺 beer, 🍷 wine
+- Dairy: 🧀 cheese, 🧈 butter, 🍦 ice cream, 🥛 milk
+- Other: 🥜 nuts/peanut butter, 🥑 avocado, 🥗 salad, 🍲 soup/stew, 🥣 cereal/bowl dishes, 🍱 meal/bento
+
+EXAMPLES:
+Input: "a banana" → {"item":"🍌 Banana",...}
+Input: "50g of banana" → {"item":"🍌 Banana (50g)",...}
+Input: "green apple" → {"item":"🍎 Green Apple",...}
+Input: "chicken breast" → {"item":"🍗 Chicken Breast (6 oz)",...}
+Input: "1 med macdonald fry" → {"item":"🍟 Medium McDonald's French Fries",...}
+Input: "chick fil a waffle fries" → {"item":"🍟 Chick-fil-A Waffle Fries",...}
+Input: "sweet potato fries" → {"item":"🍠 Sweet Potato Fries",...}
+Input: "chicken soup" → {"item":"🍲 Chicken Soup",...}
+Input: "chicken noodle soup" → {"item":"🥣 Chicken Noodle Soup",...}
+Input: "2 eggs" → {"item":"🥚 Eggs (2)",...}
+Input: "slice of pepperoni pizza" → {"item":"🍕 Pepperoni Pizza (1 slice)",...}
+Input: "cup of white rice" → {"item":"🍚 White Rice (1 cup)",...}
+Input: "brown rice" → {"item":"🍚 Brown Rice (1 cup)",...}
+Input: "6 oz salmon" → {"item":"🐟 Salmon (6 oz)",...}
+Input: "ribeye steak" → {"item":"🥩 Ribeye Steak (8 oz)",...}
+
 Return ONLY a JSON array:
-[{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+[{"item":"emoji + clean name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
             }
           ]
         })
