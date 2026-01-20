@@ -3,7 +3,7 @@ require('dotenv').config({ path: '.env.local' });
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const openaiHandler = require('./api/OpenAI/messages');
+const openaiHandler = require('./api/openai/messages');
 
 const app = express();
 const PORT = 3001;

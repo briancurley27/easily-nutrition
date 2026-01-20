@@ -36,7 +36,7 @@ Easily is a natural-language nutrition tracking tool that allows users to log fo
 ```
 easily-nutrition/
 ├── api/
-│   └── OpenAI/
+│   └── openai/
 │       └── messages.js         # Vercel serverless function for OpenAI API proxy
 ├── public/
 │   ├── index.html              # Main HTML template
@@ -153,7 +153,7 @@ The main application component containing all core functionality:
 - `selectedDate` - Currently viewed date
 - `session` - Supabase auth session
 
-### api/OpenAI/messages.js
+### api/openai/messages.js
 Serverless function that proxies requests to OpenAI API:
 - Handles POST requests to `/api/openai/messages`
 - Forwards request body to `https://api.openai.com/v1/chat/completions`
@@ -244,7 +244,7 @@ The app uses OpenAI GPT-5 mini with structured prompts to:
 ### Rate Limiting
 **Issue**: API returns 429 errors during heavy usage
 **Solution**: Optimized prompt length, added retry logic with exponential backoff
-**Files**: api/OpenAI/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
+**Files**: api/openai/messages.js, src/CalorieTracker.js (commits d44280e, ec4a069)
 
 ### Database Connection Errors
 **Issue**: Intermittent connection issues with Supabase

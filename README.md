@@ -41,7 +41,7 @@ This app calls `/api/openai/messages`, which is implemented as a Vercel serverle
 
 1. Add the following environment variable in Vercel:
    - `OPENAI_API_KEY`
-2. Deploy the project. The API route lives at `api/OpenAI/messages.js`.
+2. Deploy the project. The API route lives at `api/openai/messages.js`.
 
 ## Features
 
