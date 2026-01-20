@@ -605,9 +605,12 @@ Return ONLY a JSON array:
       // Show signup prompt after first entry (with delay so users can see results)
       if (!hasCompletedFirstEntry) {
         setHasCompletedFirstEntry(true);
+        // Dynamic delay based on number of items: 5s for 1 item, +0.5s per additional item, max 10s
+        const itemCount = foodItems.length;
+        const delayMs = Math.min(5000 + (itemCount - 1) * 500, 10000);
         setTimeout(() => {
           setShowSignupPrompt(true);
-        }, 5000); // 5 second delay
+        }, delayMs);
       }
     }
 
