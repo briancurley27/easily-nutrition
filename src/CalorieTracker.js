@@ -602,10 +602,12 @@ Return ONLY a JSON array:
 
       setEntries(updatedEntries);
 
-      // Show signup prompt after first entry
+      // Show signup prompt after first entry (with delay so users can see results)
       if (!hasCompletedFirstEntry) {
         setHasCompletedFirstEntry(true);
-        setShowSignupPrompt(true);
+        setTimeout(() => {
+          setShowSignupPrompt(true);
+        }, 2500); // 2.5 second delay
       }
     }
 
@@ -1288,27 +1290,24 @@ Return ONLY a JSON array:
                   <span><strong>Access anywhere</strong> — Sync across all your devices</span>
                 </li>
               </ul>
-              <p className="text-sm text-gray-500 italic">
-                Takes only 30 seconds. No credit card required. 100% free forever.
-              </p>
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowSignupPrompt(false)}
-                className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
-              >
-                Maybe Later
-              </button>
+            <div className="flex flex-col items-center gap-3">
               <button
                 onClick={() => {
                   setShowSignupPrompt(false);
                   setAuthMode('signup');
                   setShowAuthModal(true);
                 }}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-indigo-700 transition shadow-lg"
+                className="w-full px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-lg rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition shadow-lg"
               >
-                Sign Up Free
+                Sign Up Now
+              </button>
+              <button
+                onClick={() => setShowSignupPrompt(false)}
+                className="text-sm text-gray-500 hover:text-gray-700 transition underline"
+              >
+                Maybe later
               </button>
             </div>
           </div>
