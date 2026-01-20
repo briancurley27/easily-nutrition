@@ -340,43 +340,59 @@ const CalorieTracker = () => {
 
 FORMATTING RULES:
 1. CLEAN UP food names: Fix typos, capitalize properly, use official brand names (e.g., "macdonald fry" → "McDonald's French Fries")
-2. ADD EMOJI before each food name (choose contextually appropriate emoji - see examples below)
-3. PORTION DETAILS:
-   - If user specified a portion (e.g., "50g of banana", "6 oz chicken"), INCLUDE it in the name
-   - For ambiguous protein items (chicken, beef, fish), INCLUDE assumed portion in parentheses (e.g., "🍗 Chicken Breast (6 oz)")
-   - For simple/obvious items (fruits, single eggs, slices), DO NOT include weight/size details (e.g., "🍌 Banana" NOT "🍌 Banana (medium, 118g)")
 
-EMOJI GUIDELINES:
-- Fruits: 🍌 banana, 🍎 apple, 🍊 orange, 🍇 grapes, 🍓 strawberry, 🍑 peach, 🥭 mango, 🍉 watermelon, 🫐 blueberry
-- Vegetables: 🥕 carrot, 🥦 broccoli, 🥬 lettuce/salad, 🍅 tomato, 🥒 cucumber, 🫑 bell pepper, 🥔 potato, 🧅 onion, 🌽 corn
-- Proteins: 🍗 chicken (breast, nuggets, tenders, wings), 🥩 beef/steak, 🍖 ribs/pork, 🐟 fish, 🦐 shrimp, 🥚 eggs
-- Prepared chicken: 🍗 grilled/fried chicken, 🍲 chicken soup, 🥣 chicken noodle soup
-- Grains/Bread: 🍞 bread/toast, 🥖 baguette, 🥯 bagel, 🥐 croissant, 🍚 rice (white/brown), 🍝 pasta
-- Fast food: 🍟 fries (McDonald's, Chick-fil-A waffle, truffle, steak fries), 🍠 sweet potato fries, 🍕 pizza, 🍔 burger, 🌮 taco, 🌯 burrito, 🌭 hot dog
-- Snacks: 🍿 popcorn, 🍪 cookies, 🍰 cake, 🧁 cupcake, 🍩 donut, 🍫 chocolate, 🍬 candy
-- Drinks: ☕ coffee, 🥤 soda, 🧃 juice, 🥛 milk, 🍺 beer, 🍷 wine
-- Dairy: 🧀 cheese, 🧈 butter, 🍦 ice cream, 🥛 milk
-- Other: 🥜 nuts/peanut butter, 🥑 avocado, 🥗 salad, 🍲 soup/stew, 🥣 cereal/bowl dishes, 🍱 meal/bento
+2. EMOJI USAGE - BE SELECTIVE:
+   - ONLY add emoji if it's truly representative of the food
+   - When in doubt, NO EMOJI is better than a misleading emoji
+   - Examples of GOOD emoji use: 🍌 banana, 🍎 apple, 🍕 pizza, 🍟 fries, 🥚 eggs
+   - Examples of BAD emoji use: 🥩 for Slim Jim (not representative), 🍪 for Oreos (that's chocolate chip cookie)
+   - Skip emoji for: processed/packaged foods without good match, specific branded items, generic descriptions
 
-EXAMPLES:
+3. QUANTITY FORMATTING:
+   - Put quantity NUMBER BEFORE the food name, not after in parentheses
+   - CORRECT: "2 Eggs", "4 Oreos", "10 Fish Sticks", "1 Chicken Wing"
+   - WRONG: "Eggs (2)", "Oreo Cookies (4 cookies)", "Fish Sticks (10)", "Chicken Wing (1 wing)"
+   - Use parentheses ONLY for measurement clarification with different units: "Chicken Breast (6 oz)", "Banana (50g)"
+   - For ambiguous proteins (chicken, beef, fish) when user didn't specify amount, ADD portion: "Chicken Breast (6 oz)"
+
+4. PORTION DETAILS:
+   - If user specified portion/weight, include it: "50g of banana" → "Banana (50g)"
+   - For ambiguous items, add assumed portion in parentheses: "chicken breast" → "Chicken Breast (6 oz)"
+   - For countable items, put number before name: "4 oreos" → "4 Oreos"
+   - Don't add technical details for simple items: "banana" → "Banana" NOT "Banana (medium, 118g)"
+
+SELECTIVE EMOJI EXAMPLES (only use when truly representative):
+✓ Good matches: 🍌 banana, 🍎 apple, 🍊 orange, 🍇 grapes, 🍓 strawberry, 🍑 peach, 🥭 mango, 🍉 watermelon
+✓ Good matches: 🥕 carrot, 🥦 broccoli, 🍅 tomato, 🥒 cucumber, 🥔 potato, 🌽 corn
+✓ Good matches: 🍗 chicken wings/drumsticks, 🥚 eggs, 🥩 steak/beef cuts, 🐟 fish/salmon
+✓ Good matches: 🍞 bread/toast, 🥯 bagel, 🥐 croissant, 🍚 rice, 🍝 pasta
+✓ Good matches: 🍟 fries, 🍕 pizza, 🍔 burger, 🌮 taco, 🌯 burrito, 🌭 hot dog
+✓ Good matches: 🥛 milk, ☕ coffee, 🧃 juice, 🥤 soda
+✗ Skip emoji for: Oreos, Slim Jims, fish sticks, protein bars, most packaged/processed foods, specific brands without exact match
+
+FORMATTING EXAMPLES:
 Input: "a banana" → {"item":"🍌 Banana",...}
 Input: "50g of banana" → {"item":"🍌 Banana (50g)",...}
 Input: "green apple" → {"item":"🍎 Green Apple",...}
+Input: "2 eggs" → {"item":"🥚 2 Eggs",...}
+Input: "4 oreos" → {"item":"4 Oreos",...} (no cookie emoji - not representative)
+Input: "10 fish sticks" → {"item":"10 Fish Sticks",...} (no emoji - processed food)
+Input: "a chicken wing" → {"item":"🍗 1 Chicken Wing",...}
 Input: "chicken breast" → {"item":"🍗 Chicken Breast (6 oz)",...}
-Input: "1 med macdonald fry" → {"item":"🍟 Medium McDonald's French Fries",...}
+Input: "a slim jim" → {"item":"1 Slim Jim",...} (no emoji - not like any emoji)
+Input: "1 med macdonald fry" → {"item":"🍟 Large McDonald's French Fries",...}
+Input: "large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries",...}
 Input: "chick fil a waffle fries" → {"item":"🍟 Chick-fil-A Waffle Fries",...}
 Input: "sweet potato fries" → {"item":"🍠 Sweet Potato Fries",...}
 Input: "chicken soup" → {"item":"🍲 Chicken Soup",...}
-Input: "chicken noodle soup" → {"item":"🥣 Chicken Noodle Soup",...}
-Input: "2 eggs" → {"item":"🥚 Eggs (2)",...}
-Input: "slice of pepperoni pizza" → {"item":"🍕 Pepperoni Pizza (1 slice)",...}
-Input: "cup of white rice" → {"item":"🍚 White Rice (1 cup)",...}
-Input: "brown rice" → {"item":"🍚 Brown Rice (1 cup)",...}
+Input: "slice of pepperoni pizza" → {"item":"🍕 1 Slice Pepperoni Pizza",...}
+Input: "cup of white rice" → {"item":"🍚 1 Cup White Rice",...}
 Input: "6 oz salmon" → {"item":"🐟 Salmon (6 oz)",...}
 Input: "ribeye steak" → {"item":"🥩 Ribeye Steak (8 oz)",...}
+Input: "cup of milk" → {"item":"🥛 1 Cup Milk",...}
 
 Return ONLY a JSON array:
-[{"item":"emoji + clean name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+[{"item":"optional emoji + clean name with quantity before","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
             }
           ]
         })
