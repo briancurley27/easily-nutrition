@@ -309,6 +309,9 @@ const CalorieTracker = () => {
 
   // Food processing
   const processFood = async (foodText) => {
+    const perfStart = performance.now();
+    console.log('[PERF] processFood: Starting for:', foodText);
+
     setIsProcessing(true);
     setProcessingError(null);
     setShowErrorDetails(false);
@@ -323,6 +326,8 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
+      const apiStart = performance.now();
+      console.log('[PERF] processFood: Starting API call');
       const response = await fetch('/api/openai/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -399,6 +404,10 @@ Return ONLY a JSON array:
         })
       });
 
+      const apiEnd = performance.now();
+      const apiDuration = ((apiEnd - apiStart) / 1000).toFixed(2);
+      console.log(`[PERF] processFood: API call completed in ${apiDuration}s`);
+
       if (!response.ok) {
         const errorText = await response.text();
         const errorMsg = `API error (${response.status}): ${errorText}`;
@@ -410,6 +419,8 @@ Return ONLY a JSON array:
         throw new Error(errorMsg);
       }
 
+      const parseStart = performance.now();
+      console.log('[PERF] processFood: Parsing response');
       const data = await response.json();
       console.log('[processFood] Full API response:', JSON.stringify(data, null, 2));
 
@@ -535,6 +546,13 @@ Return ONLY a JSON array:
         };
       });
 
+      const parseEnd = performance.now();
+      const parseDuration = ((parseEnd - parseStart) / 1000).toFixed(2);
+      console.log(`[PERF] processFood: Response parsing took ${parseDuration}s`);
+
+      const perfEnd = performance.now();
+      const totalDuration = ((perfEnd - perfStart) / 1000).toFixed(2);
+      console.log(`[PERF] processFood: Total time ${totalDuration}s (API: ${apiDuration}s, Parse: ${parseDuration}s)`);
       console.log('[processFood] Success! Returning', mappedItems.length, 'items');
       return mappedItems;
 
@@ -568,7 +586,13 @@ Return ONLY a JSON array:
   const handleSubmit = async () => {
     if (!currentInput.trim() || isProcessing) return;
 
+    const submitStart = performance.now();
+    console.log('[PERF] handleSubmit: Starting');
+
     const foodItems = await processFood(currentInput);
+
+    const dbStart = performance.now();
+    console.log('[PERF] handleSubmit: Starting database operations');
     const now = new Date();
 
     const newEntry = {
@@ -621,6 +645,10 @@ Return ONLY a JSON array:
         return;
       }
 
+      const dbEnd = performance.now();
+      const dbDuration = ((dbEnd - dbStart) / 1000).toFixed(2);
+      console.log(`[PERF] handleSubmit: Database save took ${dbDuration}s`);
+
       const updatedEntries = { ...entries };
       if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
       updatedEntries[selectedDate].push({
@@ -667,6 +695,10 @@ Return ONLY a JSON array:
         }, delayMs);
       }
     }
+
+    const submitEnd = performance.now();
+    const totalSubmitDuration = ((submitEnd - submitStart) / 1000).toFixed(2);
+    console.log(`[PERF] handleSubmit: Total submission time ${totalSubmitDuration}s`);
 
     setCurrentInput('');
   };
