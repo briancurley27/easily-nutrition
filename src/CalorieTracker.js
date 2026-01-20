@@ -102,7 +102,8 @@ const CalorieTracker = () => {
   const [showGoalsModal, setShowGoalsModal] = useState(false);
   const [goalInputs, setGoalInputs] = useState({ calories: '', protein: '', carbs: '', fat: '' });
   const [visibleSourceKey, setVisibleSourceKey] = useState(null);
-  const [processingError, setProcessingError] = useState(null);
+  const [processingError, setProcessingError] = useState(null); // { message, details }
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [draggedItem, setDraggedItem] = useState(null); // { entryId, itemIndex }
   const [touchDragState, setTouchDragState] = useState(null); // { entryId, itemIndex, startY, currentY }
   const [dragPreview, setDragPreview] = useState(null); // { x, y, item } for visual feedback
@@ -301,6 +302,7 @@ const CalorieTracker = () => {
   const processFood = async (foodText) => {
     setIsProcessing(true);
     setProcessingError(null);
+    setShowErrorDetails(false);
 
     try {
       // Only include corrections that might be relevant (limit to 10 most recent to reduce token usage)
@@ -336,7 +338,10 @@ JSON array with ALL items:
         const errorText = await response.text();
         const errorMsg = `API error (${response.status}): ${errorText}`;
         console.error('[processFood] API error:', errorMsg);
-        setProcessingError(errorMsg);
+        setProcessingError({
+          message: 'Unable to connect to AI service. Please try again.',
+          details: `HTTP ${response.status}: ${errorText}`
+        });
         throw new Error(errorMsg);
       }
 
@@ -377,27 +382,38 @@ JSON array with ALL items:
       if (refusalReason) {
         const errorMsg = `AI refused to process: ${refusalReason}`;
         console.error('[processFood] AI refusal:', refusalReason);
-        setProcessingError(errorMsg);
+        setProcessingError({
+          message: 'Unable to process your request. Try rephrasing your food description.',
+          details: `AI Refusal: ${refusalReason}`
+        });
         throw new Error(errorMsg);
       }
 
       if (!allText || allText.trim() === '') {
-        // Provide detailed error based on finish reason
-        let errorMsg = 'No text content in API response.';
+        // Provide user-friendly message and technical details based on finish reason
+        let userMessage = 'Unable to process your food. Please try again.';
+        let technicalDetails = 'No text content in API response.';
 
         if (finishReason === 'content_filter') {
-          errorMsg = 'Request was blocked by content filter. Try rephrasing your food description.';
+          userMessage = 'Your request was blocked. Try rephrasing your food description.';
+          technicalDetails = `Finish reason: content_filter. The AI's content filter blocked this request.`;
         } else if (finishReason === 'length') {
-          errorMsg = 'Response was cut off due to length limits. Try entering fewer items at once.';
+          userMessage = 'Too many items at once. Try entering fewer items.';
+          technicalDetails = `Finish reason: length. Response was cut off due to token length limits.`;
         } else if (data.error) {
-          errorMsg = `OpenAI API error: ${data.error.message || JSON.stringify(data.error)}`;
+          userMessage = 'AI service error. Please try again in a moment.';
+          technicalDetails = `OpenAI API error: ${data.error.message || JSON.stringify(data.error)}`;
         } else {
-          errorMsg = `No text content in API response. Finish reason: ${finishReason || 'unknown'}. This may be a temporary API issue - please try again.`;
+          userMessage = 'Temporary issue with AI service. Please try again.';
+          technicalDetails = `No text content in API response. Finish reason: ${finishReason || 'unknown'}. Full response: ${JSON.stringify(data)}`;
         }
 
-        console.error('[processFood]', errorMsg, 'Full response:', data);
-        setProcessingError(errorMsg);
-        throw new Error(errorMsg);
+        console.error('[processFood]', technicalDetails, 'Full response:', data);
+        setProcessingError({
+          message: userMessage,
+          details: technicalDetails
+        });
+        throw new Error(technicalDetails);
       }
 
       console.log('[processFood] Extracted text preview:', allText.substring(0, 300));
@@ -411,7 +427,10 @@ JSON array with ALL items:
         const errorMsg = 'Could not find JSON array in response';
         console.error('[processFood]', errorMsg);
         console.error('[processFood] Response content:', content);
-        setProcessingError(errorMsg + '. The AI may have returned an unexpected format.');
+        setProcessingError({
+          message: 'AI returned an unexpected format. Please try again.',
+          details: `Could not find JSON array in response. Content received: ${content.substring(0, 500)}`
+        });
         throw new Error(errorMsg);
       }
 
@@ -425,7 +444,10 @@ JSON array with ALL items:
         const errorMsg = `JSON parse error: ${parseError.message}`;
         console.error('[processFood]', errorMsg);
         console.error('[processFood] Attempted to parse:', arrayMatch[0]);
-        setProcessingError(errorMsg);
+        setProcessingError({
+          message: 'Failed to parse AI response. Please try again.',
+          details: `JSON parse error: ${parseError.message}. Attempted to parse: ${arrayMatch[0]}`
+        });
         throw parseError;
       }
 
@@ -457,7 +479,10 @@ JSON array with ALL items:
 
       // Set user-friendly error message if not already set
       if (!processingError) {
-        setProcessingError(`Failed to process food: ${error.message}`);
+        setProcessingError({
+          message: 'Failed to process your food. Please try again.',
+          details: `Error: ${error.message}\n\nStack trace:\n${error.stack}`
+        });
       }
 
       return [{
@@ -521,7 +546,10 @@ JSON array with ALL items:
 
     if (error) {
       console.error('Error saving entry:', error);
-      setProcessingError(`Failed to save entry: ${error.message || 'Database connection error'}. Your food was logged but not saved.`);
+      setProcessingError({
+        message: 'Failed to save your entry. Your food was processed but not saved.',
+        details: `Database error: ${error.message || 'Unknown database connection error'}\n\nError object: ${JSON.stringify(error, null, 2)}`
+      });
       return;
     }
 
@@ -1413,19 +1441,42 @@ JSON array with ALL items:
         <div className="max-w-4xl mx-auto">
           {/* Error Message */}
           {processingError && (
-            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-              <div className="flex-1">
-                <p className="text-sm text-red-800 font-medium">Processing Error</p>
-                <p className="text-xs text-red-600 mt-1">{processingError}</p>
-                <p className="text-xs text-red-500 mt-1">Check browser console (F12) for detailed logs.</p>
+            <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <p className="text-sm text-red-800 font-semibold">Error</p>
+                  <p className="text-sm text-red-700 mt-1">{processingError.message || processingError}</p>
+
+                  {processingError.details && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setShowErrorDetails(!showErrorDetails)}
+                        className="text-xs text-red-600 hover:text-red-800 underline font-medium"
+                      >
+                        {showErrorDetails ? 'Hide Details' : 'Show Technical Details'}
+                      </button>
+
+                      {showErrorDetails && (
+                        <div className="mt-2 p-3 bg-red-100 rounded border border-red-300">
+                          <p className="text-xs font-mono text-red-900 whitespace-pre-wrap break-words">
+                            {processingError.details}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setProcessingError(null);
+                    setShowErrorDetails(false);
+                  }}
+                  className="text-red-400 hover:text-red-600 flex-shrink-0"
+                  aria-label="Dismiss error"
+                >
+                  <X size={16} />
+                </button>
               </div>
-              <button
-                onClick={() => setProcessingError(null)}
-                className="text-red-400 hover:text-red-600"
-                aria-label="Dismiss error"
-              >
-                <X size={16} />
-              </button>
             </div>
           )}
 
