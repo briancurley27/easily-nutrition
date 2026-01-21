@@ -1821,7 +1821,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Easily</h1>
             <p className="text-sm text-gray-600">
-              {session ? session.user.email : 'Track your food. Easily'}
+              {session ? session.user.email : 'Track your food. Easily.'}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1875,9 +1875,10 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
             {/* Mobile Layout: Macros left, Calories right */}
             <div className="lg:hidden">
-              <div className={`flex gap-3 ${session && 'mb-4'}`}>
+              <div className={`flex gap-4 items-start ${session && 'mb-4'}`}>
                 {/* Macros - Left Side */}
-                <div className={`flex-1 ${goals ? 'space-y-2' : 'space-y-1'}`}>
+                <div className={`flex-1 flex justify-center ${goals ? 'space-y-2' : 'space-y-1'}`}>
+                  <div className={goals ? 'space-y-2' : 'space-y-1'}>
                   {['protein', 'carbs', 'fat'].map(macro => (
                     <div key={macro}>
                       <div className="flex items-baseline gap-2">
@@ -1894,6 +1895,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                       )}
                     </div>
                   ))}
+                  </div>
                 </div>
 
                 {/* Calories - Right Side */}
@@ -1981,6 +1983,15 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
           {/* Chat Interface - Unified Box */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+            {/* Onboarding Message */}
+            {messages.length === 0 && !pendingFoods && !processingError && (
+              <div className="p-4 border-b border-gray-200 bg-purple-50">
+                <p className="text-sm text-gray-600 text-center">
+                  Get started! Tell me what you ate and I'll track the nutrition for you.
+                </p>
+              </div>
+            )}
+
             {/* Chat Messages */}
             {messages.length > 0 && (
               <div className="max-h-60 overflow-y-auto p-4 border-b border-gray-200">
