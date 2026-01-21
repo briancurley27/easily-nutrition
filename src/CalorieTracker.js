@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, Calendar, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
+import { Send, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
