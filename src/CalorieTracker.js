@@ -275,6 +275,10 @@ const CalorieTracker = () => {
   });
   const chatEndRef = useRef(null);
 
+  // Swipe state for individual items
+  const [swipedItem, setSwipedItem] = useState(null); // { entryId, itemIndex, offsetX }
+  const swipeStartRef = useRef(null); // { x, entryId, itemIndex }
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -526,22 +530,39 @@ const CalorieTracker = () => {
       const apiMessages = [
         {
           role: 'system',
-          content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
+          content: `You are a friendly nutrition tracking assistant. You have two response modes:
 
-Prefer training data. Only search web for unknown items.
+MODE 1 - INITIAL RESPONSE (ALWAYS DO THIS FIRST):
+Provide nutrition data immediately with reasonable assumptions. Return a JSON array with the food items.
+
+ASSUMPTIONS TO MAKE:
+- "Glass of milk" = 8 oz whole milk
+- "Coffee" = black coffee with optional mention of adding cream/sugar
+- "Banana" = medium banana (120g)
+- "Chicken breast" = 6 oz cooked
+- "Steak" = 8 oz
+- Generic items = standard serving sizes
+
+After the JSON array, you may add a brief friendly suggestion for refinement (optional, keep it natural):
+"These are the values for whole milk - let me know if you had skim, 2%, or another type for more precise tracking!"
+
+MODE 2 - CLARIFYING QUESTIONS (Only when truly necessary):
+Only ask clarifying questions if the food is genuinely ambiguous and you cannot make a reasonable assumption.
+Examples: "pasta" (need to know if plain, with sauce, etc.), "salad" (countless variations)
+
+When asking questions, still provide an initial estimate with assumptions stated clearly.
 
 FORMATTING RULES:
 1. Clean up food names: Fix typos, capitalize properly, use official brand names
-2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items without exact matches
+2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items
 3. Quantity: Put number BEFORE name ("2 Eggs" not "Eggs (2)")
-4. Portions: Add assumed portions for ambiguous proteins ("Chicken Breast (6 oz)"), include user-specified weights ("Banana (50g)")
+4. Portions: Add assumed portions for proteins ("Chicken Breast (6 oz)")
 
 Examples:
 "2 eggs" → {"item":"🥚 2 Eggs","calories":140,"protein":12,"carbs":2,"fat":10,"source":"USDA"}
+"glass of milk" → {"item":"🥛 Glass of Milk (8 oz, Whole)","calories":150,"protein":8,"carbs":12,"fat":8,"source":"USDA"} + suggestion about milk types
 "chicken breast" → {"item":"🍗 Chicken Breast (6 oz)","calories":280,"protein":53,"carbs":0,"fat":6,"source":"USDA"}
 "large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries","calories":490,"protein":6,"carbs":66,"fat":23,"source":"McDonald's nutrition"}
-"4 oreos" → {"item":"4 Oreos","calories":160,"protein":2,"carbs":25,"fat":7,"source":"Oreo nutrition"} (no emoji)
-"50g banana" → {"item":"🍌 Banana (50g)","calories":45,"protein":1,"carbs":12,"fat":0,"source":"USDA"}
 
 Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
         },
@@ -1198,6 +1219,116 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setNutritionEditValues({});
   };
 
+  // Swipe handlers for individual items
+  const handleItemTouchStart = (e, entryId, itemIndex) => {
+    // Don't start swipe if editing nutrition
+    if (editingNutrition !== null) return;
+
+    const touch = e.touches[0];
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      entryId,
+      itemIndex,
+      startTime: Date.now()
+    };
+  };
+
+  const handleItemTouchMove = (e, entryId, itemIndex) => {
+    if (!swipeStartRef.current ||
+        swipeStartRef.current.entryId !== entryId ||
+        swipeStartRef.current.itemIndex !== itemIndex) {
+      return;
+    }
+
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - swipeStartRef.current.x;
+    const deltaY = Math.abs(touch.clientY - swipeStartRef.current.y);
+
+    // Only register horizontal swipes (not vertical scrolling)
+    if (Math.abs(deltaX) > 10 && deltaY < 30) {
+      e.preventDefault(); // Prevent scrolling when swiping horizontally
+
+      // Limit swipe distance
+      const maxSwipe = 100;
+      const limitedDeltaX = Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
+
+      setSwipedItem({
+        entryId,
+        itemIndex,
+        offsetX: limitedDeltaX
+      });
+    }
+  };
+
+  const handleItemTouchEnd = (e, entryId, itemIndex) => {
+    if (!swipedItem || !swipeStartRef.current) {
+      swipeStartRef.current = null;
+      return;
+    }
+
+    const { offsetX } = swipedItem;
+    const swipeThreshold = 50; // Minimum swipe distance to trigger action
+
+    // Swipe right = Edit
+    if (offsetX > swipeThreshold) {
+      const entry = entries[selectedDate].find(e => e.id === entryId);
+      if (entry && entry.items[itemIndex]) {
+        startEditNutrition(entryId, itemIndex, entry.items[itemIndex]);
+      }
+    }
+    // Swipe left = Delete
+    else if (offsetX < -swipeThreshold) {
+      deleteIndividualItem(selectedDate, entryId, itemIndex);
+    }
+
+    // Reset swipe state
+    setSwipedItem(null);
+    swipeStartRef.current = null;
+  };
+
+  // Delete individual item from entry
+  const deleteIndividualItem = async (date, entryId, itemIndex) => {
+    const entry = entries[date].find(e => e.id === entryId);
+    if (!entry) return;
+
+    const updatedItems = entry.items.filter((_, idx) => idx !== itemIndex);
+
+    // If no items left, delete the entire entry
+    if (updatedItems.length === 0) {
+      await deleteEntry(date, entryId);
+      return;
+    }
+
+    // Calculate new totals
+    const newTotals = {
+      total_calories: updatedItems.reduce((sum, i) => sum + (i.calories || 0), 0),
+      total_protein: updatedItems.reduce((sum, i) => sum + (i.protein || 0), 0),
+      total_carbs: updatedItems.reduce((sum, i) => sum + (i.carbs || 0), 0),
+      total_fat: updatedItems.reduce((sum, i) => sum + (i.fat || 0), 0)
+    };
+
+    // Update database if authenticated
+    if (session?.user) {
+      await supabase.from('entries').update({ items: updatedItems, ...newTotals }).eq('id', entryId);
+    }
+
+    // Update local state
+    const updatedEntries = { ...entries };
+    const entryIndexInList = updatedEntries[date].findIndex(e => e.id === entryId);
+    if (entryIndexInList !== -1) {
+      updatedEntries[date][entryIndexInList] = {
+        ...entry,
+        items: updatedItems,
+        totalCalories: newTotals.total_calories,
+        totalProtein: newTotals.total_protein,
+        totalCarbs: newTotals.total_carbs,
+        totalFat: newTotals.total_fat
+      };
+    }
+    setEntries(updatedEntries);
+  };
+
   // Drag and drop for reordering items
   const handleDragStart = (e, entryId, itemIndex) => {
     e.stopPropagation(); // Prevent bubbling
@@ -1799,7 +1930,60 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
         <div className="max-w-4xl mx-auto">
           {/* Stats Card */}
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-6 lg:p-8 mb-6">
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-6 lg:gap-12">
+            {/* Mobile Layout: Calories + Macros side by side, Chart below */}
+            <div className="lg:hidden">
+              {/* Top Row: Calories and Macros side by side */}
+              <div className="flex gap-4 mb-6">
+                {/* Calories - Left Side */}
+                <div className="flex-shrink-0">
+                  <div className="bg-white rounded-2xl shadow-lg px-6 py-4 text-center">
+                    <div className="text-4xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
+                    <div className="text-xs text-gray-600 mt-2">Calories{goals?.calories && <span className="text-gray-400"> / {goals.calories}</span>}</div>
+                    {goals?.calories && (
+                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mt-2">
+                        <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, 'calories'), goals.calories)} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, 'calories'), goals.calories)}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Macros - Right Side */}
+                <div className="flex-1 space-y-3">
+                  {['protein', 'carbs', 'fat'].map(macro => (
+                    <div key={macro}>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-xs text-gray-600 w-10 capitalize">{macro}</span>
+                        <span className="text-xl font-bold text-purple-600">
+                          {getDailyTotal(selectedDate, macro)}<span className="text-sm text-gray-500">g</span>
+                          {goals?.[macro] && <span className="text-xs text-gray-400 ml-1">/ {goals[macro]}g</span>}
+                        </span>
+                      </div>
+                      {goals?.[macro] && (
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, macro), goals[macro])} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, macro), goals[macro])}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Chart - Below */}
+              <div className="w-full">
+                <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
+                <ResponsiveContainer width="100%" height={120}>
+                  <LineChart data={getWeeklyData()}>
+                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                    <YAxis hide />
+                    <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px' }} formatter={(value) => [`${value} cal`, 'Calories']} />
+                    <Line type="monotone" dataKey="calories" stroke="#9333ea" strokeWidth={3} dot={{ fill: '#9333ea', r: 4 }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Desktop Layout: Original side by side layout */}
+            <div className="hidden lg:flex items-center justify-between gap-12">
               {/* Macros */}
               <div className="flex-1 space-y-4 w-full">
                 {['protein', 'carbs', 'fat'].map(macro => (
@@ -1819,7 +2003,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   </div>
                 ))}
               </div>
-              
+
               {/* Chart */}
               <div className="flex-1 w-full">
                 <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
@@ -1832,7 +2016,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              
+
               {/* Calories */}
               <div className="flex-shrink-0">
                 <div className="bg-white rounded-2xl shadow-lg px-8 lg:px-10 py-6 lg:py-8 text-center">
@@ -1854,122 +2038,138 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
               <div key={entry.id} className="bg-white rounded-xl shadow-sm p-5">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm text-gray-500">{entry.localTime || new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
-                  {editingEntry !== entry.id && (
-                    <div className="flex gap-2">
-                      <button onClick={() => startEdit(entry)} className="text-purple-600 hover:text-purple-800 p-1"><Edit2 size={16} /></button>
-                      <button onClick={() => deleteEntry(selectedDate, entry.id)} className="text-red-600 hover:text-red-800 p-1"><Trash2 size={16} /></button>
-                    </div>
-                  )}
+                  <button onClick={() => deleteEntry(selectedDate, entry.id)} className="text-red-600 hover:text-red-800 p-1"><Trash2 size={16} /></button>
                 </div>
-                
-                {editingEntry === entry.id ? (
-                  <div className="mb-3 flex gap-2">
-                    <input type="text" value={editText} onChange={(e) => setEditText(e.target.value)} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" disabled={isProcessing} />
-                    <button onClick={() => saveEdit(selectedDate, entry.id)} disabled={isProcessing} className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"><Check size={20} /></button>
-                    <button onClick={cancelEdit} disabled={isProcessing} className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50"><X size={20} /></button>
-                  </div>
-                ) : (
-                  <p className="text-gray-700 mb-4 italic">"{entry.input}"</p>
-                )}
-                
+
                 <div className="space-y-2 mb-3">
-                  {entry.items.map((item, idx) => (
+                  {entry.items.map((item, idx) => {
+                    const isThisItemSwiped = swipedItem?.entryId === entry.id && swipedItem?.itemIndex === idx;
+                    const swipeOffset = isThisItemSwiped ? swipedItem.offsetX : 0;
+
+                    return (
                     <div
                       key={idx}
-                      data-item-drop-target="true"
-                      data-entry-id={entry.id}
-                      data-item-index={idx}
-                      onDragOver={handleDragOver}
-                      onDrop={() => handleDrop(entry.id, idx)}
-                      className={`bg-gray-50 rounded-lg p-3 ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                      className="relative overflow-hidden"
                     >
-                      {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-gray-800 font-medium">{item.item}</span>
-                          </div>
-                          <div className="grid grid-cols-4 gap-2 mb-2">
-                            {['calories', 'protein', 'carbs', 'fat'].map(field => (
-                              <div key={field}>
-                                <label className="text-xs text-gray-600 block mb-1 capitalize">{field === 'calories' ? 'Calories' : `${field} (g)`}</label>
-                                <input type="number" value={nutritionEditValues[field]} onChange={(e) => setNutritionEditValues({...nutritionEditValues, [field]: e.target.value})} className="w-full px-2 py-1 border rounded text-sm" />
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => saveNutritionCorrection(selectedDate, entry.id, idx)} className="flex-1 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Save & Remember</button>
-                            <button onClick={cancelEditNutrition} className="px-3 py-1 bg-gray-300 rounded text-sm hover:bg-gray-400">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2 flex-1">
-                              {editingEntry !== entry.id && editingNutrition === null && (
-                                <div
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, entry.id, idx)}
-                                  onDragEnd={handleDragEnd}
-                                  onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
-                                  onTouchMove={handleTouchMove}
-                                  onTouchEnd={handleTouchEnd}
-                                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
-                                  style={{ touchAction: 'none' }}
-                                >
-                                  <GripVertical size={20} className="text-gray-400 flex-shrink-0" />
-                                </div>
-                              )}
+                      {/* Swipe Action Backgrounds */}
+                      {isThisItemSwiped && (
+                        <>
+                          {/* Edit background (right swipe) */}
+                          {swipeOffset > 0 && (
+                            <div className="absolute inset-y-0 left-0 flex items-center px-4 bg-purple-500">
+                              <Edit2 size={20} className="text-white" />
+                            </div>
+                          )}
+                          {/* Delete background (left swipe) */}
+                          {swipeOffset < 0 && (
+                            <div className="absolute inset-y-0 right-0 flex items-center px-4 bg-red-500">
+                              <Trash2 size={20} className="text-white" />
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      <div
+                        data-item-drop-target="true"
+                        data-entry-id={entry.id}
+                        data-item-index={idx}
+                        onDragOver={handleDragOver}
+                        onDrop={() => handleDrop(entry.id, idx)}
+                        onTouchStart={(e) => handleItemTouchStart(e, entry.id, idx)}
+                        onTouchMove={(e) => handleItemTouchMove(e, entry.id, idx)}
+                        onTouchEnd={(e) => handleItemTouchEnd(e, entry.id, idx)}
+                        className={`bg-gray-50 rounded-lg p-3 transition-transform ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                        style={{ transform: `translateX(${swipeOffset}px)` }}
+                      >
+                        {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
                               <span className="text-gray-800 font-medium">{item.item}</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <div className="relative" data-source-tooltip="true">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const key = `${entry.id}-${idx}`;
-                                    setVisibleSourceKey(prev => (prev === key ? null : key));
-                                  }}
-                                  onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                  onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                  onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                  onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                  className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
-                                  title={`Source: ${item.source || 'unknown'}`}
-                                  aria-label={`Calories source: ${item.source || 'unknown'}`}
-                                >
-                                  {item.error ? '?' : item.calories} cal
-                                </button>
-                                {visibleSourceKey === `${entry.id}-${idx}` && (() => {
-                                  const { displayName, url } = parseSource(item.source);
-                                  return (
-                                    <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
-                                      Source: {url ? (
-                                        <a
-                                          href={url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="underline hover:text-purple-300"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          {displayName}
-                                        </a>
-                                      ) : displayName}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                              <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
+                            <div className="grid grid-cols-4 gap-2 mb-2">
+                              {['calories', 'protein', 'carbs', 'fat'].map(field => (
+                                <div key={field}>
+                                  <label className="text-xs text-gray-600 block mb-1 capitalize">{field === 'calories' ? 'Calories' : `${field} (g)`}</label>
+                                  <input type="number" value={nutritionEditValues[field]} onChange={(e) => setNutritionEditValues({...nutritionEditValues, [field]: e.target.value})} className="w-full px-2 py-1 border rounded text-sm" />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => saveNutritionCorrection(selectedDate, entry.id, idx)} className="flex-1 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Save & Remember</button>
+                              <button onClick={cancelEditNutrition} className="px-3 py-1 bg-gray-300 rounded text-sm hover:bg-gray-400">Cancel</button>
                             </div>
                           </div>
-                          <div className="flex gap-4 text-sm text-gray-600">
-                            <span>P: {item.protein}g</span>
-                            <span>C: {item.carbs}g</span>
-                            <span>F: {item.fat}g</span>
+                        ) : (
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                {editingNutrition === null && (
+                                  <div
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, entry.id, idx)}
+                                    onDragEnd={handleDragEnd}
+                                    onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
+                                    style={{ touchAction: 'none' }}
+                                  >
+                                    <GripVertical size={20} className="text-gray-400 flex-shrink-0" />
+                                  </div>
+                                )}
+                                <span className="text-gray-800 font-medium">{item.item}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="relative" data-source-tooltip="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const key = `${entry.id}-${idx}`;
+                                      setVisibleSourceKey(prev => (prev === key ? null : key));
+                                    }}
+                                    onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                    onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                    onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                    onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                    className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
+                                    title={`Source: ${item.source || 'unknown'}`}
+                                    aria-label={`Calories source: ${item.source || 'unknown'}`}
+                                  >
+                                    {item.error ? '?' : item.calories} cal
+                                  </button>
+                                  {visibleSourceKey === `${entry.id}-${idx}` && (() => {
+                                    const { displayName, url } = parseSource(item.source);
+                                    return (
+                                      <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                        Source: {url ? (
+                                          <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="underline hover:text-purple-300"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            {displayName}
+                                          </a>
+                                        ) : displayName}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
+                              </div>
+                            </div>
+                            <div className="flex gap-4 text-sm text-gray-600">
+                              <span>P: {item.protein}g</span>
+                              <span>C: {item.carbs}g</span>
+                              <span>F: {item.fat}g</span>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 
                 <div className="pt-3 border-t border-gray-200">
