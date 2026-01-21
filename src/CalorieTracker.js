@@ -1987,7 +1987,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {messages.length === 0 && !pendingFoods && !processingError && (
               <div className="p-4 border-b border-gray-200 bg-purple-50">
                 <p className="text-sm text-gray-600 text-center">
-                  Get started! Tell me what you ate and I'll track the nutrition for you.
+                  Start here! Tell me what you ate.
                 </p>
               </div>
             )}
@@ -2106,7 +2106,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
             {/* Input Area */}
             <div className="p-4">
-              <div className="flex gap-3">
+              <div className="flex flex-col lg:flex-row gap-3">
                 <input
                   type="text"
                   value={currentInput}
@@ -2119,7 +2119,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                 <button
                   onClick={handleSubmit}
                   disabled={isProcessing || !currentInput.trim()}
-                  className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isProcessing ? 'Processing...' : <><Send size={20} />Send</>}
                 </button>
