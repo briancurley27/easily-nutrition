@@ -1821,7 +1821,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Easily</h1>
             <p className="text-sm text-gray-600">
-              {session ? session.user.email : 'Track your nutrition with AI'}
+              {session ? session.user.email : 'Track your food. Easily'}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1872,57 +1872,61 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto">
           {/* Stats Card */}
-          <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-6 lg:p-8 mb-6">
-            {/* Mobile Layout: Calories + Macros side by side, Chart below */}
+          <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
+            {/* Mobile Layout: Macros left, Calories right */}
             <div className="lg:hidden">
-              {/* Top Row: Calories and Macros side by side */}
-              <div className="flex gap-4 mb-6">
-                {/* Calories - Left Side */}
-                <div className="flex-shrink-0">
-                  <div className="bg-white rounded-2xl shadow-lg px-6 py-4 text-center">
-                    <div className="text-4xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
-                    <div className="text-xs text-gray-600 mt-2">Calories{goals?.calories && <span className="text-gray-400"> / {goals.calories}</span>}</div>
-                    {goals?.calories && (
-                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mt-2">
-                        <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, 'calories'), goals.calories)} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, 'calories'), goals.calories)}%` }} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Macros - Right Side */}
-                <div className="flex-1 space-y-3">
+              <div className={`flex gap-3 ${session && 'mb-4'}`}>
+                {/* Macros - Left Side */}
+                <div className={`flex-1 ${goals ? 'space-y-2' : 'space-y-1'}`}>
                   {['protein', 'carbs', 'fat'].map(macro => (
                     <div key={macro}>
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-xs text-gray-600 w-10 capitalize">{macro}</span>
-                        <span className="text-xl font-bold text-purple-600">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs text-gray-600 w-12 capitalize">{macro}</span>
+                        <span className="text-lg font-bold text-purple-600">
                           {getDailyTotal(selectedDate, macro)}<span className="text-sm text-gray-500">g</span>
                           {goals?.[macro] && <span className="text-xs text-gray-400 ml-1">/ {goals[macro]}g</span>}
                         </span>
                       </div>
                       {goals?.[macro] && (
-                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden ml-14">
                           <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, macro), goals[macro])} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, macro), goals[macro])}%` }} />
                         </div>
                       )}
                     </div>
                   ))}
                 </div>
+
+                {/* Calories - Right Side */}
+                <div className="flex-shrink-0">
+                  <div className="bg-white rounded-xl shadow-lg px-5 py-3 text-center">
+                    <div className="text-3xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
+                    <div className="text-xs text-gray-600 mt-1">Calories</div>
+                    {goals?.calories && (
+                      <>
+                        <div className="text-xs text-gray-400 mt-0.5">/ {goals.calories}</div>
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-1.5 w-16 mx-auto">
+                          <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, 'calories'), goals.calories)} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, 'calories'), goals.calories)}%` }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Chart - Below */}
-              <div className="w-full">
-                <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
-                <ResponsiveContainer width="100%" height={120}>
-                  <LineChart data={getWeeklyData()}>
-                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                    <YAxis hide />
-                    <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px' }} formatter={(value) => [`${value} cal`, 'Calories']} />
-                    <Line type="monotone" dataKey="calories" stroke="#9333ea" strokeWidth={3} dot={{ fill: '#9333ea', r: 4 }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              {/* Chart - Only show for authenticated users */}
+              {session && (
+                <div className="w-full">
+                  <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
+                  <ResponsiveContainer width="100%" height={100}>
+                    <LineChart data={getWeeklyData()}>
+                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px' }} formatter={(value) => [`${value} cal`, 'Calories']} />
+                      <Line type="monotone" dataKey="calories" stroke="#9333ea" strokeWidth={3} dot={{ fill: '#9333ea', r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             {/* Desktop Layout: Original side by side layout */}
@@ -1971,6 +1975,154 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Chat Interface - Unified Box */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+            {/* Chat Messages */}
+            {messages.length > 0 && (
+              <div className="max-h-60 overflow-y-auto p-4 border-b border-gray-200">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    <div className={`inline-block max-w-[80%] px-4 py-2 rounded-lg ${
+                      msg.role === 'user'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      <p className="text-sm">{msg.content}</p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+
+            {/* Pending Foods Confirmation */}
+            {pendingFoods && (
+              <div className="p-4 bg-purple-50 border-b border-purple-200">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">Select items to add to your log:</h3>
+                <div className="space-y-2 mb-4">
+                  {pendingFoods.items.map((item, idx) => (
+                    <label
+                      key={idx}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
+                        pendingFoods.selectionState[idx]
+                          ? 'bg-white border-2 border-purple-400'
+                          : 'bg-white border-2 border-gray-200 opacity-60'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pendingFoods.selectionState[idx]}
+                        onChange={() => toggleFoodSelection(idx)}
+                        className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-gray-800 font-medium">{item.item}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-semibold text-purple-600">{item.calories} cal</span>
+                        <div className="text-xs text-gray-600">
+                          P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setPendingFoods(null)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addConfirmedFoodsToLog}
+                    disabled={!Object.values(pendingFoods.selectionState).some(v => v)}
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add to Log ({Object.values(pendingFoods.selectionState).filter(v => v).length})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {processingError && (
+              <div className="p-4 bg-red-50 border-b border-red-200">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <p className="text-sm text-red-800 font-semibold">Error</p>
+                    <p className="text-sm text-red-700 mt-1">{processingError.message || processingError}</p>
+
+                    {processingError.details && (
+                      <div className="mt-3">
+                        <button
+                          onClick={() => setShowErrorDetails(!showErrorDetails)}
+                          className="text-xs text-red-600 hover:text-red-800 underline font-medium"
+                        >
+                          {showErrorDetails ? 'Hide Details' : 'Show Technical Details'}
+                        </button>
+
+                        {showErrorDetails && (
+                          <div className="mt-2 p-3 bg-red-100 rounded border border-red-300">
+                            <p className="text-xs font-mono text-red-900 whitespace-pre-wrap break-words">
+                              {processingError.details}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setProcessingError(null);
+                      setShowErrorDetails(false);
+                    }}
+                    className="text-red-400 hover:text-red-600 flex-shrink-0"
+                    aria-label="Dismiss error"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Input Area */}
+            <div className="p-4">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={currentInput}
+                  onChange={(e) => setCurrentInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
+                  disabled={isProcessing}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
+                />
+                <button
+                  onClick={handleSubmit}
+                  disabled={isProcessing || !currentInput.trim()}
+                  className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isProcessing ? 'Processing...' : <><Send size={20} />Send</>}
+                </button>
+              </div>
+
+              {/* Manual Entry Link */}
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => setShowManualEntry(true)}
+                  className="text-xs text-gray-500 hover:text-purple-600 transition flex items-center gap-1 mx-auto"
+                >
+                  <Plus size={14} />
+                  Add manually
+                </button>
               </div>
             </div>
           </div>
@@ -2128,162 +2280,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                 </div>
               </div>
             ))}
-            
-            {(!entries[selectedDate] || entries[selectedDate].length === 0) && (
-              <div className="text-center py-12 bg-white rounded-xl">
-                <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600">No entries for this day yet.</p>
-                <p className="text-sm text-gray-500 mt-2">Start logging your meals below!</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Input Section with Chat and Confirmation */}
-      <div className="bg-white border-t border-gray-200 px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          {/* Chat Messages - only show if there are messages */}
-          {messages.length > 0 && (
-            <div className="mb-4 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
-              {messages.map((msg, idx) => (
-                <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                  <div className={`inline-block max-w-[80%] px-4 py-2 rounded-lg ${
-                    msg.role === 'user'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-200 text-gray-800'
-                  }`}>
-                    <p className="text-sm">{msg.content}</p>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </p>
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-          )}
-
-          {/* Pending Foods Confirmation */}
-          {pendingFoods && (
-            <div className="mb-4 border-2 border-purple-300 bg-purple-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Select items to add to your log:</h3>
-              <div className="space-y-2 mb-4">
-                {pendingFoods.items.map((item, idx) => (
-                  <label
-                    key={idx}
-                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
-                      pendingFoods.selectionState[idx]
-                        ? 'bg-white border-2 border-purple-400'
-                        : 'bg-white border-2 border-gray-200 opacity-60'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={pendingFoods.selectionState[idx]}
-                      onChange={() => toggleFoodSelection(idx)}
-                      className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
-                    />
-                    <div className="flex-1">
-                      <span className="text-gray-800 font-medium">{item.item}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-semibold text-purple-600">{item.calories} cal</span>
-                      <div className="text-xs text-gray-600">
-                        P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setPendingFoods(null)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addConfirmedFoodsToLog}
-                  disabled={!Object.values(pendingFoods.selectionState).some(v => v)}
-                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add to Log ({Object.values(pendingFoods.selectionState).filter(v => v).length})
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {processingError && (
-            <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <p className="text-sm text-red-800 font-semibold">Error</p>
-                  <p className="text-sm text-red-700 mt-1">{processingError.message || processingError}</p>
-
-                  {processingError.details && (
-                    <div className="mt-3">
-                      <button
-                        onClick={() => setShowErrorDetails(!showErrorDetails)}
-                        className="text-xs text-red-600 hover:text-red-800 underline font-medium"
-                      >
-                        {showErrorDetails ? 'Hide Details' : 'Show Technical Details'}
-                      </button>
-
-                      {showErrorDetails && (
-                        <div className="mt-2 p-3 bg-red-100 rounded border border-red-300">
-                          <p className="text-xs font-mono text-red-900 whitespace-pre-wrap break-words">
-                            {processingError.details}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    setProcessingError(null);
-                    setShowErrorDetails(false);
-                  }}
-                  className="text-red-400 hover:text-red-600 flex-shrink-0"
-                  aria-label="Dismiss error"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Input Field */}
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
-              disabled={isProcessing}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={isProcessing || !currentInput.trim()}
-              className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isProcessing ? 'Processing...' : <><Send size={20} />Send</>}
-            </button>
-          </div>
-
-          {/* Manual Entry Link */}
-          <div className="mt-3 text-center">
-            <button
-              onClick={() => setShowManualEntry(true)}
-              className="text-xs text-gray-500 hover:text-purple-600 transition flex items-center gap-1 mx-auto"
-            >
-              <Plus size={14} />
-              Add manually
-            </button>
           </div>
         </div>
       </div>
