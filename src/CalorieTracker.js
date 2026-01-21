@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
@@ -262,6 +262,19 @@ const CalorieTracker = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hasCompletedFirstEntry, setHasCompletedFirstEntry] = useState(false);
 
+  // Chat and confirmation states
+  const [messages, setMessages] = useState([]); // Conversation history
+  const [pendingFoods, setPendingFoods] = useState(null); // {items: [], selectionState: {0: true, 1: true, ...}}
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualEntryInputs, setManualEntryInputs] = useState({
+    item: '',
+    calories: '',
+    protein: '',
+    carbs: '',
+    fat: ''
+  });
+  const chatEndRef = useRef(null);
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -391,6 +404,19 @@ const CalorieTracker = () => {
     setSelectedDate(getLocalDateString());
   }, []);
 
+  // Auto-scroll chat to bottom when messages change
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, pendingFoods]);
+
+  // Clear chat and pending foods when date changes (new conversation for each day)
+  useEffect(() => {
+    setMessages([]);
+    setPendingFoods(null);
+  }, [selectedDate]);
+
   // Auth functions
   const handleSignUp = async () => {
     setAuthLoading(true);
@@ -477,8 +503,8 @@ const CalorieTracker = () => {
     // and then back to the app, so we don't need to handle success here
   };
 
-  // Food processing
-  const processFood = async (foodText) => {
+  // Food processing with conversation context
+  const processFood = async (foodText, conversationHistory = []) => {
     const perfStart = performance.now();
     console.log('[PERF] processFood: Starting for:', foodText);
 
@@ -496,18 +522,11 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
-      const apiStart = performance.now();
-      console.log('[PERF] processFood: Starting API call');
-      const response = await fetch('/api/openai/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-5-mini-2025-08-07',
-          max_completion_tokens: 4000,
-          messages: [
-            {
-              role: 'system',
-              content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
+      // Build messages array with conversation history
+      const apiMessages = [
+        {
+          role: 'system',
+          content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
 
 Prefer training data. Only search web for unknown items.
 
@@ -525,12 +544,24 @@ Examples:
 "50g banana" → {"item":"🍌 Banana (50g)","calories":45,"protein":1,"carbs":12,"fat":0,"source":"USDA"}
 
 Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
-            },
-            {
-              role: 'user',
-              content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}`
-            }
-          ]
+        },
+        // Add conversation history (limit to last 10 messages to manage token usage)
+        ...conversationHistory.slice(-10),
+        {
+          role: 'user',
+          content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}`
+        }
+      ];
+
+      const apiStart = performance.now();
+      console.log('[PERF] processFood: Starting API call');
+      const response = await fetch('/api/openai/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-5-mini-2025-08-07',
+          max_completion_tokens: 4000,
+          messages: apiMessages
         })
       });
 
@@ -712,29 +743,93 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     }
   };
 
-  // Entry management
+  // Entry management with conversational flow
   const handleSubmit = async () => {
     if (!currentInput.trim() || isProcessing) return;
 
     const submitStart = performance.now();
     console.log('[PERF] handleSubmit: Starting');
 
-    const foodItems = await processFood(currentInput);
+    const userMessage = currentInput;
+
+    // Add user message to chat
+    const newUserMessage = {
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, newUserMessage]);
+    setCurrentInput('');
+
+    // Process food with conversation history
+    const foodItems = await processFood(userMessage, messages);
+
+    if (foodItems.length > 0 && !foodItems[0].error) {
+      // Add AI response message to chat
+      const aiMessage = {
+        role: 'assistant',
+        content: `I found ${foodItems.length} item${foodItems.length > 1 ? 's' : ''}: ${foodItems.map(item => item.item).join(', ')}`,
+        timestamp: new Date().toISOString(),
+        items: foodItems
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Set pending foods for confirmation (all selected by default)
+      const selectionState = {};
+      foodItems.forEach((_, index) => {
+        selectionState[index] = true;
+      });
+
+      setPendingFoods({
+        items: foodItems,
+        selectionState: selectionState,
+        originalInput: userMessage
+      });
+    } else {
+      // Error case
+      const aiMessage = {
+        role: 'assistant',
+        content: 'Sorry, I had trouble processing that. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }
+
+    const submitEnd = performance.now();
+    const totalSubmitDuration = ((submitEnd - submitStart) / 1000).toFixed(2);
+    console.log(`[PERF] handleSubmit: Total submission time ${totalSubmitDuration}s`);
+  };
+
+  // Add confirmed foods to log
+  const addConfirmedFoodsToLog = async () => {
+    if (!pendingFoods) return;
+
+    const { items, selectionState, originalInput } = pendingFoods;
+
+    // Get only selected items
+    const selectedItems = items.filter((_, index) => selectionState[index]);
+
+    if (selectedItems.length === 0) {
+      setPendingFoods(null);
+      return;
+    }
 
     const dbStart = performance.now();
-    console.log('[PERF] handleSubmit: Starting database operations');
+    console.log('[PERF] addConfirmedFoodsToLog: Starting database operations');
     const now = new Date();
 
     const newEntry = {
       date: selectedDate,
       timestamp: now.toISOString(),
       local_time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      input: currentInput,
-      items: foodItems,
-      total_calories: foodItems.reduce((sum, item) => sum + (item.calories || 0), 0),
-      total_protein: foodItems.reduce((sum, item) => sum + (item.protein || 0), 0),
-      total_carbs: foodItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
-      total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
+      input: originalInput,
+      items: selectedItems,
+      total_calories: selectedItems.reduce((sum, item) => sum + (item.calories || 0), 0),
+      total_protein: selectedItems.reduce((sum, item) => sum + (item.protein || 0), 0),
+      total_carbs: selectedItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
+      total_fat: selectedItems.reduce((sum, item) => sum + (item.fat || 0), 0)
     };
 
     if (session?.user) {
@@ -777,7 +872,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
       const dbEnd = performance.now();
       const dbDuration = ((dbEnd - dbStart) / 1000).toFixed(2);
-      console.log(`[PERF] handleSubmit: Database save took ${dbDuration}s`);
+      console.log(`[PERF] addConfirmedFoodsToLog: Database save took ${dbDuration}s`);
 
       const updatedEntries = { ...entries };
       if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
@@ -818,7 +913,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       if (!hasCompletedFirstEntry) {
         setHasCompletedFirstEntry(true);
         // Dynamic delay based on number of items: 5s for 1 item, +0.5s per additional item, max 10s
-        const itemCount = foodItems.length;
+        const itemCount = selectedItems.length;
         const delayMs = Math.min(5000 + (itemCount - 1) * 500, 10000);
         setTimeout(() => {
           setShowSignupPrompt(true);
@@ -826,11 +921,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       }
     }
 
-    const submitEnd = performance.now();
-    const totalSubmitDuration = ((submitEnd - submitStart) / 1000).toFixed(2);
-    console.log(`[PERF] handleSubmit: Total submission time ${totalSubmitDuration}s`);
-
-    setCurrentInput('');
+    // Clear pending foods
+    setPendingFoods(null);
   };
 
   const handleKeyPress = (e) => {
@@ -838,6 +930,112 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       e.preventDefault();
       handleSubmit();
     }
+  };
+
+  // Toggle food selection in pending foods
+  const toggleFoodSelection = (index) => {
+    if (!pendingFoods) return;
+
+    setPendingFoods(prev => ({
+      ...prev,
+      selectionState: {
+        ...prev.selectionState,
+        [index]: !prev.selectionState[index]
+      }
+    }));
+  };
+
+  // Manual entry submission
+  const submitManualEntry = async () => {
+    const { item, calories, protein, carbs, fat } = manualEntryInputs;
+
+    if (!item.trim()) {
+      setProcessingError({ message: 'Please enter a food name.' });
+      return;
+    }
+
+    const now = new Date();
+    const foodItem = {
+      item: item.trim(),
+      calories: parseInt(calories) || 0,
+      protein: parseInt(protein) || 0,
+      carbs: parseInt(carbs) || 0,
+      fat: parseInt(fat) || 0,
+      source: 'manual entry'
+    };
+
+    const newEntry = {
+      date: selectedDate,
+      timestamp: now.toISOString(),
+      local_time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+      input: `Manual: ${item.trim()}`,
+      items: [foodItem],
+      total_calories: foodItem.calories,
+      total_protein: foodItem.protein,
+      total_carbs: foodItem.carbs,
+      total_fat: foodItem.fat
+    };
+
+    if (session?.user) {
+      // Authenticated user: save to Supabase
+      newEntry.user_id = session.user.id;
+
+      const { data, error } = await supabase.from('entries').insert(newEntry).select().single();
+
+      if (error) {
+        console.error('Error saving manual entry:', error);
+        setProcessingError({
+          message: 'Failed to save your entry.',
+          details: error.message
+        });
+        return;
+      }
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: data.id,
+        timestamp: data.timestamp,
+        localTime: data.local_time,
+        input: data.input,
+        items: data.items,
+        totalCalories: data.total_calories,
+        totalProtein: data.total_protein,
+        totalCarbs: data.total_carbs,
+        totalFat: data.total_fat
+      });
+
+      setEntries(updatedEntries);
+    } else {
+      // Anonymous user: keep in memory only
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: tempId,
+        timestamp: newEntry.timestamp,
+        localTime: newEntry.local_time,
+        input: newEntry.input,
+        items: newEntry.items,
+        totalCalories: newEntry.total_calories,
+        totalProtein: newEntry.total_protein,
+        totalCarbs: newEntry.total_carbs,
+        totalFat: newEntry.total_fat
+      });
+
+      setEntries(updatedEntries);
+    }
+
+    // Reset form and close modal
+    setManualEntryInputs({
+      item: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: ''
+    });
+    setShowManualEntry(false);
   };
 
   const deleteEntry = async (date, entryId) => {
@@ -870,7 +1068,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   const saveEdit = async (date, entryId) => {
     if (!editText.trim() || isProcessing) return;
 
-    const foodItems = await processFood(editText);
+    // For edits, we don't use conversation context - just re-process the entry text
+    const foodItems = await processFood(editText, []);
 
     const updates = {
       input: editText,
@@ -1349,6 +1548,89 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   // Main app
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Manual Entry Modal */}
+      {showManualEntry && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Manual Entry</h2>
+              <button onClick={() => setShowManualEntry(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">Add a food entry manually with exact nutrition values.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Food Name *</label>
+                <input
+                  type="text"
+                  value={manualEntryInputs.item}
+                  onChange={(e) => setManualEntryInputs({...manualEntryInputs, item: e.target.value})}
+                  placeholder="e.g., Chicken Breast"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Calories *</label>
+                <input
+                  type="number"
+                  value={manualEntryInputs.calories}
+                  onChange={(e) => setManualEntryInputs({...manualEntryInputs, calories: e.target.value})}
+                  placeholder="e.g., 280"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Protein (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.protein}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, protein: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Carbs (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.carbs}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, carbs: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fat (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.fat}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, fat: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowManualEntry(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitManualEntry}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+              >
+                Add Entry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Goals Modal */}
       {showGoalsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1715,9 +1997,80 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input Section with Chat and Confirmation */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto">
+          {/* Chat Messages - only show if there are messages */}
+          {messages.length > 0 && (
+            <div className="mb-4 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                  <div className={`inline-block max-w-[80%] px-4 py-2 rounded-lg ${
+                    msg.role === 'user'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-200 text-gray-800'
+                  }`}>
+                    <p className="text-sm">{msg.content}</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  </p>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+          )}
+
+          {/* Pending Foods Confirmation */}
+          {pendingFoods && (
+            <div className="mb-4 border-2 border-purple-300 bg-purple-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">Select items to add to your log:</h3>
+              <div className="space-y-2 mb-4">
+                {pendingFoods.items.map((item, idx) => (
+                  <label
+                    key={idx}
+                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
+                      pendingFoods.selectionState[idx]
+                        ? 'bg-white border-2 border-purple-400'
+                        : 'bg-white border-2 border-gray-200 opacity-60'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pendingFoods.selectionState[idx]}
+                      onChange={() => toggleFoodSelection(idx)}
+                      className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+                    />
+                    <div className="flex-1">
+                      <span className="text-gray-800 font-medium">{item.item}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-semibold text-purple-600">{item.calories} cal</span>
+                      <div className="text-xs text-gray-600">
+                        P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPendingFoods(null)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addConfirmedFoodsToLog}
+                  disabled={!Object.values(pendingFoods.selectionState).some(v => v)}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add to Log ({Object.values(pendingFoods.selectionState).filter(v => v).length})
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Error Message */}
           {processingError && (
             <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -1759,6 +2112,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             </div>
           )}
 
+          {/* Input Field */}
           <div className="flex gap-3">
             <input
               type="text"
@@ -1774,7 +2128,18 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
               disabled={isProcessing || !currentInput.trim()}
               className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {isProcessing ? 'Processing...' : <><Send size={20} />Log</>}
+              {isProcessing ? 'Processing...' : <><Send size={20} />Send</>}
+            </button>
+          </div>
+
+          {/* Manual Entry Link */}
+          <div className="mt-3 text-center">
+            <button
+              onClick={() => setShowManualEntry(true)}
+              className="text-xs text-gray-500 hover:text-purple-600 transition flex items-center gap-1 mx-auto"
+            >
+              <Plus size={14} />
+              Add manually
             </button>
           </div>
         </div>
