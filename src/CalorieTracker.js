@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
+import { Send, Calendar, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
@@ -241,8 +241,6 @@ const CalorieTracker = () => {
   const [entries, setEntries] = useState({});
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
   const [isProcessing, setIsProcessing] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null);
-  const [editText, setEditText] = useState('');
   const [corrections, setCorrections] = useState({});
   const [editingNutrition, setEditingNutrition] = useState(null);
   const [nutritionEditValues, setNutritionEditValues] = useState({});
@@ -1076,61 +1074,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setEntries(updatedEntries);
   };
 
-  const startEdit = (entry) => {
-    setEditingEntry(entry.id);
-    setEditText(entry.input);
-  };
-
-  const cancelEdit = () => {
-    setEditingEntry(null);
-    setEditText('');
-  };
-
-  const saveEdit = async (date, entryId) => {
-    if (!editText.trim() || isProcessing) return;
-
-    // For edits, we don't use conversation context - just re-process the entry text
-    const foodItems = await processFood(editText, []);
-
-    const updates = {
-      input: editText,
-      items: foodItems,
-      total_calories: foodItems.reduce((sum, item) => sum + (item.calories || 0), 0),
-      total_protein: foodItems.reduce((sum, item) => sum + (item.protein || 0), 0),
-      total_carbs: foodItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
-      total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
-    };
-
-    // Only update database if user is authenticated
-    if (session?.user) {
-      const { error } = await supabase.from('entries').update(updates).eq('id', entryId);
-      if (error) {
-        console.error('Error updating entry:', error);
-        return;
-      }
-    }
-
-    // Update local state (works for both authenticated and anonymous)
-    const updatedEntries = { ...entries };
-    const entryIndex = updatedEntries[date].findIndex(e => e.id === entryId);
-
-    if (entryIndex !== -1) {
-      updatedEntries[date][entryIndex] = {
-        ...updatedEntries[date][entryIndex],
-        input: editText,
-        items: foodItems,
-        totalCalories: updates.total_calories,
-        totalProtein: updates.total_protein,
-        totalCarbs: updates.total_carbs,
-        totalFat: updates.total_fat
-      };
-    }
-
-    setEntries(updatedEntries);
-    setEditingEntry(null);
-    setEditText('');
-  };
-
   // Nutrition correction
   const startEditNutrition = (entryId, itemIndex, item) => {
     setEditingNutrition({ entryId, itemIndex });
@@ -1477,7 +1420,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   // Touch event handlers for mobile drag and drop
   const handleTouchStart = (e, entryId, itemIndex) => {
     // Only start drag if not editing
-    if (editingEntry !== null || editingNutrition !== null) return;
+    if (editingNutrition !== null) return;
 
     e.stopPropagation(); // Prevent bubbling
 
