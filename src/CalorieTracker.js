@@ -944,13 +944,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setPendingFoods(null);
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
   // Toggle food selection in pending foods
   const toggleFoodSelection = (index) => {
     if (!pendingFoods) return;
