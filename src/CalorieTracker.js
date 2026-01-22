@@ -277,6 +277,9 @@ const CalorieTracker = () => {
   const [swipedItem, setSwipedItem] = useState(null); // { entryId, itemIndex, offsetX }
   const swipeStartRef = useRef(null); // { x, entryId, itemIndex }
 
+  // Store anonymous entries before authentication
+  const anonymousEntriesRef = useRef(null);
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -284,8 +287,14 @@ const CalorieTracker = () => {
       setIsLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // If user is signing in and we have anonymous entries, save them
+      if (session && (_event === 'SIGNED_IN' || _event === 'USER_UPDATED') && Object.keys(entries).length > 0) {
+        anonymousEntriesRef.current = { ...entries };
+      }
+
       setSession(session);
+
       if (!session) {
         // Only clear if user logged out (not on initial load)
         if (_event === 'SIGNED_OUT') {
@@ -293,12 +302,13 @@ const CalorieTracker = () => {
           setCorrections({});
           setGoals(null);
           setHasCompletedFirstEntry(false);
+          anonymousEntriesRef.current = null;
         }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [entries]);
 
   useEffect(() => {
     if (!visibleSourceKey) return;
@@ -396,11 +406,54 @@ const CalorieTracker = () => {
     setIsLoading(false);
   }, [loadEntries, loadCorrections, loadGoals, session?.user]);
 
+  // Migrate anonymous entries to authenticated user's account
+  const migrateAnonymousEntries = useCallback(async () => {
+    if (!session?.user || !anonymousEntriesRef.current) return;
+
+    const anonymousEntries = anonymousEntriesRef.current;
+    console.log('Migrating anonymous entries to authenticated account:', anonymousEntries);
+
+    // Save each entry to Supabase
+    for (const date in anonymousEntries) {
+      const dateEntries = anonymousEntries[date];
+      for (const entry of dateEntries) {
+        const newEntry = {
+          user_id: session.user.id,
+          date: date,
+          timestamp: entry.timestamp,
+          local_time: entry.localTime,
+          input: entry.input,
+          items: entry.items,
+          total_calories: entry.totalCalories,
+          total_protein: entry.totalProtein,
+          total_carbs: entry.totalCarbs,
+          total_fat: entry.totalFat
+        };
+
+        const { error } = await supabase.from('entries').insert(newEntry);
+        if (error) {
+          console.error('Error migrating anonymous entry:', error);
+        }
+      }
+    }
+
+    // Clear the ref after migration
+    anonymousEntriesRef.current = null;
+
+    // Reload data to show migrated entries
+    await loadAllData();
+  }, [session?.user, loadAllData]);
+
   useEffect(() => {
     if (session?.user) {
-      loadAllData();
+      loadAllData().then(() => {
+        // After loading existing data, migrate anonymous entries if any
+        if (anonymousEntriesRef.current) {
+          migrateAnonymousEntries();
+        }
+      });
     }
-  }, [loadAllData, session?.user]);
+  }, [loadAllData, migrateAnonymousEntries, session?.user]);
 
   useEffect(() => {
     setSelectedDate(getLocalDateString());
@@ -1978,9 +2031,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
             {/* Onboarding Message */}
             {messages.length === 0 && !pendingFoods && !processingError && (
-              <div className="px-6 py-5 border-b border-gray-200">
-                <p className="text-sm font-medium text-gray-700 text-center">
-                  No entries yet. Start tracking your food below:
+              <div className="px-6 py-6 border-b border-gray-200">
+                <p className="text-base font-semibold text-gray-600 text-center">
+                  Start tracking your food below:
                 </p>
               </div>
             )}
