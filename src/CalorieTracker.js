@@ -2351,6 +2351,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                   })()}
                                 </div>
                                 <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
+                                <button onClick={() => deleteIndividualItem(selectedDate, entry.id, idx)} className="text-red-600 hover:text-red-800 text-xs" title="Delete item">Delete</button>
                               </div>
                             </div>
                             <div className="flex gap-4 text-sm text-gray-600">
