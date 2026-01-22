@@ -1900,13 +1900,13 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
                 {/* Calories - Right Side */}
                 <div className="flex-1 flex justify-center">
-                  <div className="bg-white rounded-xl shadow-lg px-5 py-3 text-center">
-                    <div className="text-3xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
-                    <div className="text-xs text-gray-600 mt-1">Calories</div>
+                  <div className="bg-white rounded-xl shadow-lg px-7 py-5 text-center min-w-[140px]">
+                    <div className="text-4xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
+                    <div className="text-sm text-gray-600 mt-2">Calories</div>
                     {goals?.calories && (
                       <>
-                        <div className="text-xs text-gray-400 mt-0.5">/ {goals.calories}</div>
-                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-1.5 w-16 mx-auto">
+                        <div className="text-xs text-gray-400 mt-1">/ {goals.calories}</div>
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-2 w-20 mx-auto">
                           <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, 'calories'), goals.calories)} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, 'calories'), goals.calories)}%` }} />
                         </div>
                       </>
@@ -1987,7 +1987,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {messages.length === 0 && !pendingFoods && !processingError && (
               <div className="p-4 border-b border-gray-200 bg-purple-50">
                 <p className="text-sm text-gray-600 text-center">
-                  No entries yet, get started below
+                  Nothing yet - start logging below
                 </p>
               </div>
             )}
@@ -2112,7 +2112,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   value={currentInput}
                   onChange={(e) => setCurrentInput(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
+                  placeholder="2 eggs, toast with butter, coffee..."
                   disabled={isProcessing}
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
                 />
