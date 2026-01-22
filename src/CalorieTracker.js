@@ -1987,7 +1987,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {messages.length === 0 && !pendingFoods && !processingError && (
               <div className="p-4 border-b border-gray-200 bg-purple-50">
                 <p className="text-sm text-gray-600 text-center">
-                  Nothing yet - start logging below
+                  No entries yet. Start tracking your food below:
                 </p>
               </div>
             )}
@@ -2107,14 +2107,19 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {/* Input Area */}
             <div className="p-4">
               <div className="flex flex-col lg:flex-row gap-3">
-                <input
-                  type="text"
+                <textarea
+                  rows="2"
                   value={currentInput}
                   onChange={(e) => setCurrentInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="2 eggs, toast with butter, coffee..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder="What did you eat? (e.g., 2 eggs, toast with butter, glass of milk)"
                   disabled={isProcessing}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100 resize-none"
                 />
                 <button
                   onClick={handleSubmit}
