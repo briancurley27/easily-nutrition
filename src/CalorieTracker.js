@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
+import { Send, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus, Settings } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
+import AccountSettings from './AccountSettings';
 
 // Auth Modal Component - defined outside to prevent re-mounting on state changes
 const AuthModal = ({
@@ -259,6 +260,10 @@ const CalorieTracker = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hasCompletedFirstEntry, setHasCompletedFirstEntry] = useState(false);
 
+  // User profile states
+  const [username, setUsername] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+
   // Chat and confirmation states
   const [messages, setMessages] = useState([]); // Conversation history
   const [pendingFoods, setPendingFoods] = useState(null); // {items: [], selectionState: {0: true, 1: true, ...}}
@@ -427,12 +432,29 @@ const CalorieTracker = () => {
     }
   }, [session?.user?.id]);
 
+  const loadUsername = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', session.user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error loading username:', error);
+      return;
+    }
+
+    if (data?.username) {
+      setUsername(data.username);
+    }
+  }, [session?.user?.id]);
+
   const loadAllData = useCallback(async () => {
     if (!session?.user) return;
     setIsLoading(true);
-    await Promise.all([loadEntries(), loadCorrections(), loadGoals()]);
+    await Promise.all([loadEntries(), loadCorrections(), loadGoals(), loadUsername()]);
     setIsLoading(false);
-  }, [loadEntries, loadCorrections, loadGoals, session?.user]);
+  }, [loadEntries, loadCorrections, loadGoals, loadUsername, session?.user]);
 
   // Migrate anonymous entries to authenticated user's account
   const migrateAnonymousEntries = useCallback(async () => {
@@ -1930,7 +1952,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div>
             <h1 className="text-2xl font-bold text-purple-600">Easily</h1>
             <p className="text-sm text-gray-600">
-              {session ? session.user.email : 'Track your food. Easily.'}
+              {session ? (username || session.user.email) : 'Track your food. Easily.'}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1938,6 +1960,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
               <>
                 <button onClick={openGoalsModal} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Set daily goals">
                   <Target size={20} /><span className="hidden sm:inline">Goals</span>
+                </button>
+                <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Account settings">
+                  <Settings size={20} /><span className="hidden sm:inline">Settings</span>
                 </button>
                 <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition">
                   <LogOut size={20} /><span className="hidden sm:inline">Logout</span>
@@ -2439,6 +2464,18 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           </div>
         </div>
       )}
+
+      {/* Account Settings Modal */}
+      <AccountSettings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        session={session}
+        goals={goals}
+        setGoals={setGoals}
+        entries={entries}
+        username={username}
+        setUsername={setUsername}
+      />
     </div>
   );
 };
