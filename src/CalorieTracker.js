@@ -284,6 +284,12 @@ const CalorieTracker = () => {
   // Store anonymous entries before authentication
   const anonymousEntriesRef = useRef(null);
 
+  // Track if we've loaded data for this user to prevent duplicate loads
+  const loadedUserIdRef = useRef(null);
+
+  // Track if we've already captured anonymous entries
+  const hasCapturedAnonymousRef = useRef(false);
+
   // Update refs when state changes
   useEffect(() => {
     entriesRef.current = entries;
@@ -295,10 +301,16 @@ const CalorieTracker = () => {
 
   // Capture anonymous entries when user logs in
   useEffect(() => {
-    // If transitioning from no session to having a session, save current entries
-    if (!sessionRef.current && session?.user && Object.keys(entriesRef.current).length > 0) {
+    // If transitioning from no session to having a session, save current entries (only once)
+    if (!hasCapturedAnonymousRef.current && !sessionRef.current && session?.user && Object.keys(entriesRef.current).length > 0) {
       console.log('Capturing anonymous entries for migration:', entriesRef.current);
       anonymousEntriesRef.current = { ...entriesRef.current };
+      hasCapturedAnonymousRef.current = true;
+    }
+
+    // Reset flag when user logs out
+    if (!session?.user) {
+      hasCapturedAnonymousRef.current = false;
     }
   }, [session?.user]);
 
@@ -460,13 +472,22 @@ const CalorieTracker = () => {
   }, [session?.user]);
 
   useEffect(() => {
-    if (session?.user) {
+    const userId = session?.user?.id;
+
+    if (userId && loadedUserIdRef.current !== userId) {
+      loadedUserIdRef.current = userId;
+
       (async () => {
         // First, migrate anonymous entries if any
         await migrateAnonymousEntries();
         // Then load all data (including migrated entries)
         await loadAllData();
       })();
+    }
+
+    // Reset when user logs out
+    if (!session?.user) {
+      loadedUserIdRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user]);
