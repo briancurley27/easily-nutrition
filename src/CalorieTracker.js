@@ -1600,7 +1600,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   const formatDate = (dateStr) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   // Loading state
@@ -1812,7 +1812,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Easily</h1>
+            <h1 className="text-2xl font-bold text-purple-600">Easily</h1>
             <p className="text-sm text-gray-600">
               {session ? session.user.email : 'Track your food. Easily.'}
             </p>
@@ -1978,8 +1978,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
             {/* Onboarding Message */}
             {messages.length === 0 && !pendingFoods && !processingError && (
-              <div className="p-4 border-b border-gray-200 bg-purple-50">
-                <p className="text-sm text-gray-600 text-center">
+              <div className="px-6 py-5 border-b border-gray-200">
+                <p className="text-sm font-medium text-gray-700 text-center">
                   No entries yet. Start tracking your food below:
                 </p>
               </div>
