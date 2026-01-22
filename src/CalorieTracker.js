@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Send, Calendar, LogOut, Trash2, Edit2, X, Check, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Send, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 
@@ -241,8 +241,6 @@ const CalorieTracker = () => {
   const [entries, setEntries] = useState({});
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
   const [isProcessing, setIsProcessing] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null);
-  const [editText, setEditText] = useState('');
   const [corrections, setCorrections] = useState({});
   const [editingNutrition, setEditingNutrition] = useState(null);
   const [nutritionEditValues, setNutritionEditValues] = useState({});
@@ -262,6 +260,26 @@ const CalorieTracker = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hasCompletedFirstEntry, setHasCompletedFirstEntry] = useState(false);
 
+  // Chat and confirmation states
+  const [messages, setMessages] = useState([]); // Conversation history
+  const [pendingFoods, setPendingFoods] = useState(null); // {items: [], selectionState: {0: true, 1: true, ...}}
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualEntryInputs, setManualEntryInputs] = useState({
+    item: '',
+    calories: '',
+    protein: '',
+    carbs: '',
+    fat: ''
+  });
+  const chatEndRef = useRef(null);
+
+  // Swipe state for individual items
+  const [swipedItem, setSwipedItem] = useState(null); // { entryId, itemIndex, offsetX }
+  const swipeStartRef = useRef(null); // { x, entryId, itemIndex }
+
+  // Store anonymous entries before authentication
+  const anonymousEntriesRef = useRef(null);
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -269,8 +287,14 @@ const CalorieTracker = () => {
       setIsLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // If user is signing in and we have anonymous entries, save them
+      if (session && (_event === 'SIGNED_IN' || _event === 'USER_UPDATED') && Object.keys(entries).length > 0) {
+        anonymousEntriesRef.current = { ...entries };
+      }
+
       setSession(session);
+
       if (!session) {
         // Only clear if user logged out (not on initial load)
         if (_event === 'SIGNED_OUT') {
@@ -278,12 +302,13 @@ const CalorieTracker = () => {
           setCorrections({});
           setGoals(null);
           setHasCompletedFirstEntry(false);
+          anonymousEntriesRef.current = null;
         }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [entries]);
 
   useEffect(() => {
     if (!visibleSourceKey) return;
@@ -381,15 +406,71 @@ const CalorieTracker = () => {
     setIsLoading(false);
   }, [loadEntries, loadCorrections, loadGoals, session?.user]);
 
+  // Migrate anonymous entries to authenticated user's account
+  const migrateAnonymousEntries = useCallback(async () => {
+    if (!session?.user || !anonymousEntriesRef.current) return;
+
+    const anonymousEntries = anonymousEntriesRef.current;
+    console.log('Migrating anonymous entries to authenticated account:', anonymousEntries);
+
+    // Save each entry to Supabase
+    for (const date in anonymousEntries) {
+      const dateEntries = anonymousEntries[date];
+      for (const entry of dateEntries) {
+        const newEntry = {
+          user_id: session.user.id,
+          date: date,
+          timestamp: entry.timestamp,
+          local_time: entry.localTime,
+          input: entry.input,
+          items: entry.items,
+          total_calories: entry.totalCalories,
+          total_protein: entry.totalProtein,
+          total_carbs: entry.totalCarbs,
+          total_fat: entry.totalFat
+        };
+
+        const { error } = await supabase.from('entries').insert(newEntry);
+        if (error) {
+          console.error('Error migrating anonymous entry:', error);
+        }
+      }
+    }
+
+    // Clear the ref after migration
+    anonymousEntriesRef.current = null;
+
+    // Reload data to show migrated entries
+    await loadAllData();
+  }, [session?.user, loadAllData]);
+
   useEffect(() => {
     if (session?.user) {
-      loadAllData();
+      loadAllData().then(() => {
+        // After loading existing data, migrate anonymous entries if any
+        if (anonymousEntriesRef.current) {
+          migrateAnonymousEntries();
+        }
+      });
     }
-  }, [loadAllData, session?.user]);
+  }, [loadAllData, migrateAnonymousEntries, session?.user]);
 
   useEffect(() => {
     setSelectedDate(getLocalDateString());
   }, []);
+
+  // Auto-scroll chat to bottom when messages change
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, pendingFoods]);
+
+  // Clear chat and pending foods when date changes (new conversation for each day)
+  useEffect(() => {
+    setMessages([]);
+    setPendingFoods(null);
+  }, [selectedDate]);
 
   // Auth functions
   const handleSignUp = async () => {
@@ -477,8 +558,8 @@ const CalorieTracker = () => {
     // and then back to the app, so we don't need to handle success here
   };
 
-  // Food processing
-  const processFood = async (foodText) => {
+  // Food processing with conversation context
+  const processFood = async (foodText, conversationHistory = []) => {
     const perfStart = performance.now();
     console.log('[PERF] processFood: Starting for:', foodText);
 
@@ -496,6 +577,54 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
+      // Build messages array with conversation history
+      const apiMessages = [
+        {
+          role: 'system',
+          content: `You are a friendly nutrition tracking assistant. You have two response modes:
+
+MODE 1 - INITIAL RESPONSE (ALWAYS DO THIS FIRST):
+Provide nutrition data immediately with reasonable assumptions. Return a JSON array with the food items.
+
+ASSUMPTIONS TO MAKE:
+- "Glass of milk" = 8 oz whole milk
+- "Coffee" = black coffee with optional mention of adding cream/sugar
+- "Banana" = medium banana (120g)
+- "Chicken breast" = 6 oz cooked
+- "Steak" = 8 oz
+- Generic items = standard serving sizes
+
+After the JSON array, you may add a brief friendly suggestion for refinement (optional, keep it natural):
+"These are the values for whole milk - let me know if you had skim, 2%, or another type for more precise tracking!"
+
+MODE 2 - CLARIFYING QUESTIONS (Only when truly necessary):
+Only ask clarifying questions if the food is genuinely ambiguous and you cannot make a reasonable assumption.
+Examples: "pasta" (need to know if plain, with sauce, etc.), "salad" (countless variations)
+
+When asking questions, still provide an initial estimate with assumptions stated clearly.
+
+FORMATTING RULES:
+1. Clean up food names: Fix typos, capitalize properly, use official brand names
+2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items
+3. Quantity: Put number BEFORE name ("2 Eggs" not "Eggs (2)")
+4. Portions: Add assumed portions for proteins ("Chicken Breast (6 oz)")
+
+Examples:
+"2 eggs" → {"item":"🥚 2 Eggs","calories":140,"protein":12,"carbs":2,"fat":10,"source":"USDA"}
+"glass of milk" → {"item":"🥛 Glass of Milk (8 oz, Whole)","calories":150,"protein":8,"carbs":12,"fat":8,"source":"USDA"} + suggestion about milk types
+"chicken breast" → {"item":"🍗 Chicken Breast (6 oz)","calories":280,"protein":53,"carbs":0,"fat":6,"source":"USDA"}
+"large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries","calories":490,"protein":6,"carbs":66,"fat":23,"source":"McDonald's nutrition"}
+
+Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+        },
+        // Add conversation history (limit to last 10 messages to manage token usage)
+        ...conversationHistory.slice(-10),
+        {
+          role: 'user',
+          content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}`
+        }
+      ];
+
       const apiStart = performance.now();
       console.log('[PERF] processFood: Starting API call');
       const response = await fetch('/api/openai/messages', {
@@ -504,33 +633,7 @@ const CalorieTracker = () => {
         body: JSON.stringify({
           model: 'gpt-5-mini-2025-08-07',
           max_completion_tokens: 4000,
-          messages: [
-            {
-              role: 'system',
-              content: `You are a nutrition data assistant. Return ONLY valid JSON arrays with nutrition data. Never ask questions or add explanations.
-
-Prefer training data. Only search web for unknown items.
-
-FORMATTING RULES:
-1. Clean up food names: Fix typos, capitalize properly, use official brand names
-2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items without exact matches
-3. Quantity: Put number BEFORE name ("2 Eggs" not "Eggs (2)")
-4. Portions: Add assumed portions for ambiguous proteins ("Chicken Breast (6 oz)"), include user-specified weights ("Banana (50g)")
-
-Examples:
-"2 eggs" → {"item":"🥚 2 Eggs","calories":140,"protein":12,"carbs":2,"fat":10,"source":"USDA"}
-"chicken breast" → {"item":"🍗 Chicken Breast (6 oz)","calories":280,"protein":53,"carbs":0,"fat":6,"source":"USDA"}
-"large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries","calories":490,"protein":6,"carbs":66,"fat":23,"source":"McDonald's nutrition"}
-"4 oreos" → {"item":"4 Oreos","calories":160,"protein":2,"carbs":25,"fat":7,"source":"Oreo nutrition"} (no emoji)
-"50g banana" → {"item":"🍌 Banana (50g)","calories":45,"protein":1,"carbs":12,"fat":0,"source":"USDA"}
-
-Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
-            },
-            {
-              role: 'user',
-              content: `Parse "${foodText}" and return nutrition for each item.${correctionsContext}`
-            }
-          ]
+          messages: apiMessages
         })
       });
 
@@ -712,29 +815,93 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     }
   };
 
-  // Entry management
+  // Entry management with conversational flow
   const handleSubmit = async () => {
     if (!currentInput.trim() || isProcessing) return;
 
     const submitStart = performance.now();
     console.log('[PERF] handleSubmit: Starting');
 
-    const foodItems = await processFood(currentInput);
+    const userMessage = currentInput;
+
+    // Add user message to chat
+    const newUserMessage = {
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, newUserMessage]);
+    setCurrentInput('');
+
+    // Process food with conversation history
+    const foodItems = await processFood(userMessage, messages);
+
+    if (foodItems.length > 0 && !foodItems[0].error) {
+      // Add AI response message to chat
+      const aiMessage = {
+        role: 'assistant',
+        content: `I found ${foodItems.length} item${foodItems.length > 1 ? 's' : ''}: ${foodItems.map(item => item.item).join(', ')}`,
+        timestamp: new Date().toISOString(),
+        items: foodItems
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Set pending foods for confirmation (all selected by default)
+      const selectionState = {};
+      foodItems.forEach((_, index) => {
+        selectionState[index] = true;
+      });
+
+      setPendingFoods({
+        items: foodItems,
+        selectionState: selectionState,
+        originalInput: userMessage
+      });
+    } else {
+      // Error case
+      const aiMessage = {
+        role: 'assistant',
+        content: 'Sorry, I had trouble processing that. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }
+
+    const submitEnd = performance.now();
+    const totalSubmitDuration = ((submitEnd - submitStart) / 1000).toFixed(2);
+    console.log(`[PERF] handleSubmit: Total submission time ${totalSubmitDuration}s`);
+  };
+
+  // Add confirmed foods to log
+  const addConfirmedFoodsToLog = async () => {
+    if (!pendingFoods) return;
+
+    const { items, selectionState, originalInput } = pendingFoods;
+
+    // Get only selected items
+    const selectedItems = items.filter((_, index) => selectionState[index]);
+
+    if (selectedItems.length === 0) {
+      setPendingFoods(null);
+      return;
+    }
 
     const dbStart = performance.now();
-    console.log('[PERF] handleSubmit: Starting database operations');
+    console.log('[PERF] addConfirmedFoodsToLog: Starting database operations');
     const now = new Date();
 
     const newEntry = {
       date: selectedDate,
       timestamp: now.toISOString(),
       local_time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      input: currentInput,
-      items: foodItems,
-      total_calories: foodItems.reduce((sum, item) => sum + (item.calories || 0), 0),
-      total_protein: foodItems.reduce((sum, item) => sum + (item.protein || 0), 0),
-      total_carbs: foodItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
-      total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
+      input: originalInput,
+      items: selectedItems,
+      total_calories: selectedItems.reduce((sum, item) => sum + (item.calories || 0), 0),
+      total_protein: selectedItems.reduce((sum, item) => sum + (item.protein || 0), 0),
+      total_carbs: selectedItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
+      total_fat: selectedItems.reduce((sum, item) => sum + (item.fat || 0), 0)
     };
 
     if (session?.user) {
@@ -777,7 +944,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
       const dbEnd = performance.now();
       const dbDuration = ((dbEnd - dbStart) / 1000).toFixed(2);
-      console.log(`[PERF] handleSubmit: Database save took ${dbDuration}s`);
+      console.log(`[PERF] addConfirmedFoodsToLog: Database save took ${dbDuration}s`);
 
       const updatedEntries = { ...entries };
       if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
@@ -818,7 +985,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       if (!hasCompletedFirstEntry) {
         setHasCompletedFirstEntry(true);
         // Dynamic delay based on number of items: 5s for 1 item, +0.5s per additional item, max 10s
-        const itemCount = foodItems.length;
+        const itemCount = selectedItems.length;
         const delayMs = Math.min(5000 + (itemCount - 1) * 500, 10000);
         setTimeout(() => {
           setShowSignupPrompt(true);
@@ -826,18 +993,114 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       }
     }
 
-    const submitEnd = performance.now();
-    const totalSubmitDuration = ((submitEnd - submitStart) / 1000).toFixed(2);
-    console.log(`[PERF] handleSubmit: Total submission time ${totalSubmitDuration}s`);
-
-    setCurrentInput('');
+    // Clear pending foods
+    setPendingFoods(null);
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
+  // Toggle food selection in pending foods
+  const toggleFoodSelection = (index) => {
+    if (!pendingFoods) return;
+
+    setPendingFoods(prev => ({
+      ...prev,
+      selectionState: {
+        ...prev.selectionState,
+        [index]: !prev.selectionState[index]
+      }
+    }));
+  };
+
+  // Manual entry submission
+  const submitManualEntry = async () => {
+    const { item, calories, protein, carbs, fat } = manualEntryInputs;
+
+    if (!item.trim()) {
+      setProcessingError({ message: 'Please enter a food name.' });
+      return;
     }
+
+    const now = new Date();
+    const foodItem = {
+      item: item.trim(),
+      calories: parseInt(calories) || 0,
+      protein: parseInt(protein) || 0,
+      carbs: parseInt(carbs) || 0,
+      fat: parseInt(fat) || 0,
+      source: 'manual entry'
+    };
+
+    const newEntry = {
+      date: selectedDate,
+      timestamp: now.toISOString(),
+      local_time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+      input: `Manual: ${item.trim()}`,
+      items: [foodItem],
+      total_calories: foodItem.calories,
+      total_protein: foodItem.protein,
+      total_carbs: foodItem.carbs,
+      total_fat: foodItem.fat
+    };
+
+    if (session?.user) {
+      // Authenticated user: save to Supabase
+      newEntry.user_id = session.user.id;
+
+      const { data, error } = await supabase.from('entries').insert(newEntry).select().single();
+
+      if (error) {
+        console.error('Error saving manual entry:', error);
+        setProcessingError({
+          message: 'Failed to save your entry.',
+          details: error.message
+        });
+        return;
+      }
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: data.id,
+        timestamp: data.timestamp,
+        localTime: data.local_time,
+        input: data.input,
+        items: data.items,
+        totalCalories: data.total_calories,
+        totalProtein: data.total_protein,
+        totalCarbs: data.total_carbs,
+        totalFat: data.total_fat
+      });
+
+      setEntries(updatedEntries);
+    } else {
+      // Anonymous user: keep in memory only
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[selectedDate]) updatedEntries[selectedDate] = [];
+      updatedEntries[selectedDate].push({
+        id: tempId,
+        timestamp: newEntry.timestamp,
+        localTime: newEntry.local_time,
+        input: newEntry.input,
+        items: newEntry.items,
+        totalCalories: newEntry.total_calories,
+        totalProtein: newEntry.total_protein,
+        totalCarbs: newEntry.total_carbs,
+        totalFat: newEntry.total_fat
+      });
+
+      setEntries(updatedEntries);
+    }
+
+    // Reset form and close modal
+    setManualEntryInputs({
+      item: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: ''
+    });
+    setShowManualEntry(false);
   };
 
   const deleteEntry = async (date, entryId) => {
@@ -855,60 +1118,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     updatedEntries[date] = updatedEntries[date].filter(entry => entry.id !== entryId);
     if (updatedEntries[date].length === 0) delete updatedEntries[date];
     setEntries(updatedEntries);
-  };
-
-  const startEdit = (entry) => {
-    setEditingEntry(entry.id);
-    setEditText(entry.input);
-  };
-
-  const cancelEdit = () => {
-    setEditingEntry(null);
-    setEditText('');
-  };
-
-  const saveEdit = async (date, entryId) => {
-    if (!editText.trim() || isProcessing) return;
-
-    const foodItems = await processFood(editText);
-
-    const updates = {
-      input: editText,
-      items: foodItems,
-      total_calories: foodItems.reduce((sum, item) => sum + (item.calories || 0), 0),
-      total_protein: foodItems.reduce((sum, item) => sum + (item.protein || 0), 0),
-      total_carbs: foodItems.reduce((sum, item) => sum + (item.carbs || 0), 0),
-      total_fat: foodItems.reduce((sum, item) => sum + (item.fat || 0), 0)
-    };
-
-    // Only update database if user is authenticated
-    if (session?.user) {
-      const { error } = await supabase.from('entries').update(updates).eq('id', entryId);
-      if (error) {
-        console.error('Error updating entry:', error);
-        return;
-      }
-    }
-
-    // Update local state (works for both authenticated and anonymous)
-    const updatedEntries = { ...entries };
-    const entryIndex = updatedEntries[date].findIndex(e => e.id === entryId);
-
-    if (entryIndex !== -1) {
-      updatedEntries[date][entryIndex] = {
-        ...updatedEntries[date][entryIndex],
-        input: editText,
-        items: foodItems,
-        totalCalories: updates.total_calories,
-        totalProtein: updates.total_protein,
-        totalCarbs: updates.total_carbs,
-        totalFat: updates.total_fat
-      };
-    }
-
-    setEntries(updatedEntries);
-    setEditingEntry(null);
-    setEditText('');
   };
 
   // Nutrition correction
@@ -997,6 +1206,116 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setEntries(updatedEntries);
     setEditingNutrition(null);
     setNutritionEditValues({});
+  };
+
+  // Swipe handlers for individual items
+  const handleItemTouchStart = (e, entryId, itemIndex) => {
+    // Don't start swipe if editing nutrition
+    if (editingNutrition !== null) return;
+
+    const touch = e.touches[0];
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      entryId,
+      itemIndex,
+      startTime: Date.now()
+    };
+  };
+
+  const handleItemTouchMove = (e, entryId, itemIndex) => {
+    if (!swipeStartRef.current ||
+        swipeStartRef.current.entryId !== entryId ||
+        swipeStartRef.current.itemIndex !== itemIndex) {
+      return;
+    }
+
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - swipeStartRef.current.x;
+    const deltaY = Math.abs(touch.clientY - swipeStartRef.current.y);
+
+    // Only register horizontal swipes (not vertical scrolling)
+    if (Math.abs(deltaX) > 10 && deltaY < 30) {
+      e.preventDefault(); // Prevent scrolling when swiping horizontally
+
+      // Limit swipe distance
+      const maxSwipe = 100;
+      const limitedDeltaX = Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
+
+      setSwipedItem({
+        entryId,
+        itemIndex,
+        offsetX: limitedDeltaX
+      });
+    }
+  };
+
+  const handleItemTouchEnd = (e, entryId, itemIndex) => {
+    if (!swipedItem || !swipeStartRef.current) {
+      swipeStartRef.current = null;
+      return;
+    }
+
+    const { offsetX } = swipedItem;
+    const swipeThreshold = 50; // Minimum swipe distance to trigger action
+
+    // Swipe right = Edit
+    if (offsetX > swipeThreshold) {
+      const entry = entries[selectedDate].find(e => e.id === entryId);
+      if (entry && entry.items[itemIndex]) {
+        startEditNutrition(entryId, itemIndex, entry.items[itemIndex]);
+      }
+    }
+    // Swipe left = Delete
+    else if (offsetX < -swipeThreshold) {
+      deleteIndividualItem(selectedDate, entryId, itemIndex);
+    }
+
+    // Reset swipe state
+    setSwipedItem(null);
+    swipeStartRef.current = null;
+  };
+
+  // Delete individual item from entry
+  const deleteIndividualItem = async (date, entryId, itemIndex) => {
+    const entry = entries[date].find(e => e.id === entryId);
+    if (!entry) return;
+
+    const updatedItems = entry.items.filter((_, idx) => idx !== itemIndex);
+
+    // If no items left, delete the entire entry
+    if (updatedItems.length === 0) {
+      await deleteEntry(date, entryId);
+      return;
+    }
+
+    // Calculate new totals
+    const newTotals = {
+      total_calories: updatedItems.reduce((sum, i) => sum + (i.calories || 0), 0),
+      total_protein: updatedItems.reduce((sum, i) => sum + (i.protein || 0), 0),
+      total_carbs: updatedItems.reduce((sum, i) => sum + (i.carbs || 0), 0),
+      total_fat: updatedItems.reduce((sum, i) => sum + (i.fat || 0), 0)
+    };
+
+    // Update database if authenticated
+    if (session?.user) {
+      await supabase.from('entries').update({ items: updatedItems, ...newTotals }).eq('id', entryId);
+    }
+
+    // Update local state
+    const updatedEntries = { ...entries };
+    const entryIndexInList = updatedEntries[date].findIndex(e => e.id === entryId);
+    if (entryIndexInList !== -1) {
+      updatedEntries[date][entryIndexInList] = {
+        ...entry,
+        items: updatedItems,
+        totalCalories: newTotals.total_calories,
+        totalProtein: newTotals.total_protein,
+        totalCarbs: newTotals.total_carbs,
+        totalFat: newTotals.total_fat
+      };
+    }
+    setEntries(updatedEntries);
   };
 
   // Drag and drop for reordering items
@@ -1147,7 +1466,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   // Touch event handlers for mobile drag and drop
   const handleTouchStart = (e, entryId, itemIndex) => {
     // Only start drag if not editing
-    if (editingEntry !== null || editingNutrition !== null) return;
+    if (editingNutrition !== null) return;
 
     e.stopPropagation(); // Prevent bubbling
 
@@ -1334,7 +1653,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   const formatDate = (dateStr) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   // Loading state
@@ -1349,6 +1668,89 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
   // Main app
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Manual Entry Modal */}
+      {showManualEntry && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Manual Entry</h2>
+              <button onClick={() => setShowManualEntry(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">Add a food entry manually with exact nutrition values.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Food Name *</label>
+                <input
+                  type="text"
+                  value={manualEntryInputs.item}
+                  onChange={(e) => setManualEntryInputs({...manualEntryInputs, item: e.target.value})}
+                  placeholder="e.g., Chicken Breast"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Calories *</label>
+                <input
+                  type="number"
+                  value={manualEntryInputs.calories}
+                  onChange={(e) => setManualEntryInputs({...manualEntryInputs, calories: e.target.value})}
+                  placeholder="e.g., 280"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Protein (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.protein}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, protein: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Carbs (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.carbs}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, carbs: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fat (g)</label>
+                  <input
+                    type="number"
+                    value={manualEntryInputs.fat}
+                    onChange={(e) => setManualEntryInputs({...manualEntryInputs, fat: e.target.value})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-2 focus:ring-purple-500 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowManualEntry(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitManualEntry}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+              >
+                Add Entry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Goals Modal */}
       {showGoalsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1463,9 +1865,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Easily</h1>
+            <h1 className="text-2xl font-bold text-purple-600">Easily</h1>
             <p className="text-sm text-gray-600">
-              {session ? session.user.email : 'Track your nutrition with AI'}
+              {session ? session.user.email : 'Track your food. Easily.'}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1516,8 +1918,67 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto">
           {/* Stats Card */}
-          <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-6 lg:p-8 mb-6">
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-6 lg:gap-12">
+          <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
+            {/* Mobile Layout: Macros left, Calories right */}
+            <div className="lg:hidden">
+              <div className={`flex gap-4 items-center ${session && 'mb-4'}`}>
+                {/* Macros - Left Side */}
+                <div className="flex-1 flex justify-center">
+                  <div className={goals ? 'space-y-2' : 'space-y-1'}>
+                  {['protein', 'carbs', 'fat'].map(macro => (
+                    <div key={macro}>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs text-gray-600 w-12 capitalize">{macro}</span>
+                        <span className="text-lg font-bold text-purple-600">
+                          {getDailyTotal(selectedDate, macro)}<span className="text-sm text-gray-500">g</span>
+                          {goals?.[macro] && <span className="text-xs text-gray-400 ml-1">/ {goals[macro]}g</span>}
+                        </span>
+                      </div>
+                      {goals?.[macro] && (
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden ml-14">
+                          <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, macro), goals[macro])} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, macro), goals[macro])}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  </div>
+                </div>
+
+                {/* Calories - Right Side */}
+                <div className="flex-1 flex justify-center">
+                  <div className="bg-white rounded-xl shadow-lg px-7 py-5 text-center min-w-[140px]">
+                    <div className="text-4xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
+                    <div className="text-sm text-gray-600 mt-2">Calories</div>
+                    {goals?.calories && (
+                      <>
+                        <div className="text-xs text-gray-400 mt-1">/ {goals.calories}</div>
+                        <div className="h-1 bg-gray-200 rounded-full overflow-hidden mt-2 w-20 mx-auto">
+                          <div className={`h-full ${getGoalColor(getDailyTotal(selectedDate, 'calories'), goals.calories)} transition-all`} style={{ width: `${getGoalProgress(getDailyTotal(selectedDate, 'calories'), goals.calories)}%` }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart - Only show for authenticated users */}
+              {session && (
+                <div className="w-full">
+                  <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
+                  <ResponsiveContainer width="100%" height={100}>
+                    <LineChart data={getWeeklyData()}>
+                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px' }} formatter={(value) => [`${value} cal`, 'Calories']} />
+                      <Line type="monotone" dataKey="calories" stroke="#9333ea" strokeWidth={3} dot={{ fill: '#9333ea', r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Desktop Layout: Original side by side layout */}
+            <div className="hidden lg:flex items-center justify-between gap-12">
               {/* Macros */}
               <div className="flex-1 space-y-4 w-full">
                 {['protein', 'carbs', 'fat'].map(macro => (
@@ -1537,7 +1998,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   </div>
                 ))}
               </div>
-              
+
               {/* Chart */}
               <div className="flex-1 w-full">
                 <div className="text-center mb-2"><p className="text-sm text-gray-600">7-Day Trend</p></div>
@@ -1550,7 +2011,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              
+
               {/* Calories */}
               <div className="flex-shrink-0">
                 <div className="bg-white rounded-2xl shadow-lg px-8 lg:px-10 py-6 lg:py-8 text-center">
@@ -1566,128 +2027,306 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             </div>
           </div>
 
+          {/* Chat Interface - Unified Box */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+            {/* Onboarding Message */}
+            {messages.length === 0 && !pendingFoods && !processingError && (
+              <div className="px-6 py-6 border-b border-gray-200">
+                <p className="text-base font-semibold text-gray-600 text-center">
+                  Start tracking your food below:
+                </p>
+              </div>
+            )}
+
+            {/* Chat Messages */}
+            {messages.length > 0 && (
+              <div className="max-h-60 overflow-y-auto p-4 border-b border-gray-200">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    <div className={`inline-block max-w-[80%] px-4 py-2 rounded-lg ${
+                      msg.role === 'user'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      <p className="text-sm">{msg.content}</p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+
+            {/* Pending Foods Confirmation */}
+            {pendingFoods && (
+              <div className="p-4 bg-purple-50 border-b border-purple-200">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">Select items to add to your log:</h3>
+                <div className="space-y-2 mb-4">
+                  {pendingFoods.items.map((item, idx) => (
+                    <label
+                      key={idx}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
+                        pendingFoods.selectionState[idx]
+                          ? 'bg-white border-2 border-purple-400'
+                          : 'bg-white border-2 border-gray-200 opacity-60'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pendingFoods.selectionState[idx]}
+                        onChange={() => toggleFoodSelection(idx)}
+                        className="w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-gray-800 font-medium">{item.item}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-semibold text-purple-600">{item.calories} cal</span>
+                        <div className="text-xs text-gray-600">
+                          P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setPendingFoods(null)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addConfirmedFoodsToLog}
+                    disabled={!Object.values(pendingFoods.selectionState).some(v => v)}
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add to Log ({Object.values(pendingFoods.selectionState).filter(v => v).length})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {processingError && (
+              <div className="p-4 bg-red-50 border-b border-red-200">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <p className="text-sm text-red-800 font-semibold">Error</p>
+                    <p className="text-sm text-red-700 mt-1">{processingError.message || processingError}</p>
+
+                    {processingError.details && (
+                      <div className="mt-3">
+                        <button
+                          onClick={() => setShowErrorDetails(!showErrorDetails)}
+                          className="text-xs text-red-600 hover:text-red-800 underline font-medium"
+                        >
+                          {showErrorDetails ? 'Hide Details' : 'Show Technical Details'}
+                        </button>
+
+                        {showErrorDetails && (
+                          <div className="mt-2 p-3 bg-red-100 rounded border border-red-300">
+                            <p className="text-xs font-mono text-red-900 whitespace-pre-wrap break-words">
+                              {processingError.details}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setProcessingError(null);
+                      setShowErrorDetails(false);
+                    }}
+                    className="text-red-400 hover:text-red-600 flex-shrink-0"
+                    aria-label="Dismiss error"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Input Area */}
+            <div className="p-4">
+              <div className="flex flex-col lg:flex-row gap-3">
+                <textarea
+                  rows="2"
+                  value={currentInput}
+                  onChange={(e) => setCurrentInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder="What did you eat? (e.g., 2 eggs, toast with butter, glass of milk)"
+                  disabled={isProcessing}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100 resize-none"
+                />
+                <button
+                  onClick={handleSubmit}
+                  disabled={isProcessing || !currentInput.trim()}
+                  className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? 'Processing...' : <><Send size={20} />Send</>}
+                </button>
+              </div>
+
+              {/* Manual Entry Link */}
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => setShowManualEntry(true)}
+                  className="text-xs text-gray-500 hover:text-purple-600 transition flex items-center gap-1 mx-auto"
+                >
+                  <Plus size={14} />
+                  Add manually
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Entries */}
           <div className="space-y-4 mb-6">
             {entries[selectedDate]?.map((entry) => (
               <div key={entry.id} className="bg-white rounded-xl shadow-sm p-5">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm text-gray-500">{entry.localTime || new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
-                  {editingEntry !== entry.id && (
-                    <div className="flex gap-2">
-                      <button onClick={() => startEdit(entry)} className="text-purple-600 hover:text-purple-800 p-1"><Edit2 size={16} /></button>
-                      <button onClick={() => deleteEntry(selectedDate, entry.id)} className="text-red-600 hover:text-red-800 p-1"><Trash2 size={16} /></button>
-                    </div>
-                  )}
+                  <button onClick={() => deleteEntry(selectedDate, entry.id)} className="text-red-600 hover:text-red-800 p-1"><Trash2 size={16} /></button>
                 </div>
-                
-                {editingEntry === entry.id ? (
-                  <div className="mb-3 flex gap-2">
-                    <input type="text" value={editText} onChange={(e) => setEditText(e.target.value)} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" disabled={isProcessing} />
-                    <button onClick={() => saveEdit(selectedDate, entry.id)} disabled={isProcessing} className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"><Check size={20} /></button>
-                    <button onClick={cancelEdit} disabled={isProcessing} className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50"><X size={20} /></button>
-                  </div>
-                ) : (
-                  <p className="text-gray-700 mb-4 italic">"{entry.input}"</p>
-                )}
-                
+
                 <div className="space-y-2 mb-3">
-                  {entry.items.map((item, idx) => (
+                  {entry.items.map((item, idx) => {
+                    const isThisItemSwiped = swipedItem?.entryId === entry.id && swipedItem?.itemIndex === idx;
+                    const swipeOffset = isThisItemSwiped ? swipedItem.offsetX : 0;
+
+                    return (
                     <div
                       key={idx}
-                      data-item-drop-target="true"
-                      data-entry-id={entry.id}
-                      data-item-index={idx}
-                      onDragOver={handleDragOver}
-                      onDrop={() => handleDrop(entry.id, idx)}
-                      className={`bg-gray-50 rounded-lg p-3 ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                      className="relative overflow-hidden"
                     >
-                      {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-gray-800 font-medium">{item.item}</span>
-                          </div>
-                          <div className="grid grid-cols-4 gap-2 mb-2">
-                            {['calories', 'protein', 'carbs', 'fat'].map(field => (
-                              <div key={field}>
-                                <label className="text-xs text-gray-600 block mb-1 capitalize">{field === 'calories' ? 'Calories' : `${field} (g)`}</label>
-                                <input type="number" value={nutritionEditValues[field]} onChange={(e) => setNutritionEditValues({...nutritionEditValues, [field]: e.target.value})} className="w-full px-2 py-1 border rounded text-sm" />
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => saveNutritionCorrection(selectedDate, entry.id, idx)} className="flex-1 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Save & Remember</button>
-                            <button onClick={cancelEditNutrition} className="px-3 py-1 bg-gray-300 rounded text-sm hover:bg-gray-400">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2 flex-1">
-                              {editingEntry !== entry.id && editingNutrition === null && (
-                                <div
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, entry.id, idx)}
-                                  onDragEnd={handleDragEnd}
-                                  onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
-                                  onTouchMove={handleTouchMove}
-                                  onTouchEnd={handleTouchEnd}
-                                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
-                                  style={{ touchAction: 'none' }}
-                                >
-                                  <GripVertical size={20} className="text-gray-400 flex-shrink-0" />
-                                </div>
-                              )}
+                      {/* Swipe Action Backgrounds */}
+                      {isThisItemSwiped && (
+                        <>
+                          {/* Edit background (right swipe) */}
+                          {swipeOffset > 0 && (
+                            <div className="absolute inset-y-0 left-0 flex items-center px-4 bg-purple-500">
+                              <Edit2 size={20} className="text-white" />
+                            </div>
+                          )}
+                          {/* Delete background (left swipe) */}
+                          {swipeOffset < 0 && (
+                            <div className="absolute inset-y-0 right-0 flex items-center px-4 bg-red-500">
+                              <Trash2 size={20} className="text-white" />
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      <div
+                        data-item-drop-target="true"
+                        data-entry-id={entry.id}
+                        data-item-index={idx}
+                        onDragOver={handleDragOver}
+                        onDrop={() => handleDrop(entry.id, idx)}
+                        onTouchStart={(e) => handleItemTouchStart(e, entry.id, idx)}
+                        onTouchMove={(e) => handleItemTouchMove(e, entry.id, idx)}
+                        onTouchEnd={(e) => handleItemTouchEnd(e, entry.id, idx)}
+                        className={`bg-gray-50 rounded-lg p-3 transition-transform ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                        style={{ transform: `translateX(${swipeOffset}px)` }}
+                      >
+                        {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
                               <span className="text-gray-800 font-medium">{item.item}</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <div className="relative" data-source-tooltip="true">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const key = `${entry.id}-${idx}`;
-                                    setVisibleSourceKey(prev => (prev === key ? null : key));
-                                  }}
-                                  onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                  onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                  onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                  onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                  className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
-                                  title={`Source: ${item.source || 'unknown'}`}
-                                  aria-label={`Calories source: ${item.source || 'unknown'}`}
-                                >
-                                  {item.error ? '?' : item.calories} cal
-                                </button>
-                                {visibleSourceKey === `${entry.id}-${idx}` && (() => {
-                                  const { displayName, url } = parseSource(item.source);
-                                  return (
-                                    <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
-                                      Source: {url ? (
-                                        <a
-                                          href={url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="underline hover:text-purple-300"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          {displayName}
-                                        </a>
-                                      ) : displayName}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                              <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
+                            <div className="grid grid-cols-4 gap-2 mb-2">
+                              {['calories', 'protein', 'carbs', 'fat'].map(field => (
+                                <div key={field}>
+                                  <label className="text-xs text-gray-600 block mb-1 capitalize">{field === 'calories' ? 'Calories' : `${field} (g)`}</label>
+                                  <input type="number" value={nutritionEditValues[field]} onChange={(e) => setNutritionEditValues({...nutritionEditValues, [field]: e.target.value})} className="w-full px-2 py-1 border rounded text-sm" />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => saveNutritionCorrection(selectedDate, entry.id, idx)} className="flex-1 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Save & Remember</button>
+                              <button onClick={cancelEditNutrition} className="px-3 py-1 bg-gray-300 rounded text-sm hover:bg-gray-400">Cancel</button>
                             </div>
                           </div>
-                          <div className="flex gap-4 text-sm text-gray-600">
-                            <span>P: {item.protein}g</span>
-                            <span>C: {item.carbs}g</span>
-                            <span>F: {item.fat}g</span>
+                        ) : (
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                {editingNutrition === null && (
+                                  <div
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, entry.id, idx)}
+                                    onDragEnd={handleDragEnd}
+                                    onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
+                                    style={{ touchAction: 'none' }}
+                                  >
+                                    <GripVertical size={20} className="text-gray-400 flex-shrink-0" />
+                                  </div>
+                                )}
+                                <span className="text-gray-800 font-medium">{item.item}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="relative" data-source-tooltip="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const key = `${entry.id}-${idx}`;
+                                      setVisibleSourceKey(prev => (prev === key ? null : key));
+                                    }}
+                                    onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                    onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                    onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                    onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                    className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
+                                    title={`Source: ${item.source || 'unknown'}`}
+                                    aria-label={`Calories source: ${item.source || 'unknown'}`}
+                                  >
+                                    {item.error ? '?' : item.calories} cal
+                                  </button>
+                                  {visibleSourceKey === `${entry.id}-${idx}` && (() => {
+                                    const { displayName, url } = parseSource(item.source);
+                                    return (
+                                      <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                        Source: {url ? (
+                                          <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="underline hover:text-purple-300"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            {displayName}
+                                          </a>
+                                        ) : displayName}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
+                              </div>
+                            </div>
+                            <div className="flex gap-4 text-sm text-gray-600">
+                              <span>P: {item.protein}g</span>
+                              <span>C: {item.carbs}g</span>
+                              <span>F: {item.fat}g</span>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 
                 <div className="pt-3 border-t border-gray-200">
@@ -1703,79 +2342,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                 </div>
               </div>
             ))}
-            
-            {(!entries[selectedDate] || entries[selectedDate].length === 0) && (
-              <div className="text-center py-12 bg-white rounded-xl">
-                <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600">No entries for this day yet.</p>
-                <p className="text-sm text-gray-500 mt-2">Start logging your meals below!</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Input */}
-      <div className="bg-white border-t border-gray-200 px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          {/* Error Message */}
-          {processingError && (
-            <div className="mb-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <p className="text-sm text-red-800 font-semibold">Error</p>
-                  <p className="text-sm text-red-700 mt-1">{processingError.message || processingError}</p>
-
-                  {processingError.details && (
-                    <div className="mt-3">
-                      <button
-                        onClick={() => setShowErrorDetails(!showErrorDetails)}
-                        className="text-xs text-red-600 hover:text-red-800 underline font-medium"
-                      >
-                        {showErrorDetails ? 'Hide Details' : 'Show Technical Details'}
-                      </button>
-
-                      {showErrorDetails && (
-                        <div className="mt-2 p-3 bg-red-100 rounded border border-red-300">
-                          <p className="text-xs font-mono text-red-900 whitespace-pre-wrap break-words">
-                            {processingError.details}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    setProcessingError(null);
-                    setShowErrorDetails(false);
-                  }}
-                  className="text-red-400 hover:text-red-600 flex-shrink-0"
-                  aria-label="Dismiss error"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="What did you eat? (e.g., 2 eggs, toast with butter)"
-              disabled={isProcessing}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none disabled:bg-gray-100"
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={isProcessing || !currentInput.trim()}
-              className="bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isProcessing ? 'Processing...' : <><Send size={20} />Log</>}
-            </button>
           </div>
         </div>
       </div>
