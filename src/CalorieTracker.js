@@ -252,7 +252,6 @@ const CalorieTracker = () => {
   const [processingError, setProcessingError] = useState(null); // { message, details }
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [draggedItem, setDraggedItem] = useState(null); // { entryId, itemIndex }
-  const [touchDragState, setTouchDragState] = useState(null); // { entryId, itemIndex, startY, currentY }
   const [dragPreview, setDragPreview] = useState(null); // { x, y, item } for visual feedback
 
   // Anonymous user states
@@ -273,9 +272,9 @@ const CalorieTracker = () => {
   });
   const chatEndRef = useRef(null);
 
-  // Swipe state for individual items
-  const [swipedItem, setSwipedItem] = useState(null); // { entryId, itemIndex, offsetX }
-  const swipeStartRef = useRef(null); // { x, entryId, itemIndex }
+  // Unified gesture state for swipe and drag
+  const [gestureState, setGestureState] = useState(null); // { type: 'swipe'|'drag', entryId, itemIndex, ... }
+  const gestureStartRef = useRef(null); // Touch start data
 
   // Keep track of current entries and session for auth listener
   const entriesRef = useRef(entries);
@@ -1245,72 +1244,184 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setNutritionEditValues({});
   };
 
-  // Swipe handlers for individual items
-  const handleItemTouchStart = (e, entryId, itemIndex) => {
-    // Don't start swipe if editing nutrition
+  // Unified touch gesture handler for swipe (edit/delete) and drag (reorder)
+  const handleUnifiedTouchStart = (e, entryId, itemIndex, isGripIcon = false) => {
+    // Don't start gesture if editing nutrition
     if (editingNutrition !== null) return;
 
     const touch = e.touches[0];
-    swipeStartRef.current = {
+    gestureStartRef.current = {
       x: touch.clientX,
       y: touch.clientY,
       entryId,
       itemIndex,
-      startTime: Date.now()
+      startTime: Date.now(),
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+      lastTime: Date.now(),
+      isGripIcon, // Track if started from grip icon
+      gestureType: null // Will be determined on first movement
     };
   };
 
-  const handleItemTouchMove = (e, entryId, itemIndex) => {
-    if (!swipeStartRef.current ||
-        swipeStartRef.current.entryId !== entryId ||
-        swipeStartRef.current.itemIndex !== itemIndex) {
-      return;
-    }
+  const handleUnifiedTouchMove = (e) => {
+    if (!gestureStartRef.current) return;
 
     const touch = e.touches[0];
-    const deltaX = touch.clientX - swipeStartRef.current.x;
-    const deltaY = Math.abs(touch.clientY - swipeStartRef.current.y);
+    const { x: startX, y: startY, entryId, itemIndex, isGripIcon, gestureType, lastX, lastY, lastTime } = gestureStartRef.current;
 
-    // Only register horizontal swipes (not vertical scrolling)
-    if (Math.abs(deltaX) > 10 && deltaY < 30) {
-      e.preventDefault(); // Prevent scrolling when swiping horizontally
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    const absDeltaX = Math.abs(deltaX);
+    const absDeltaY = Math.abs(deltaY);
 
-      // Limit swipe distance
-      const maxSwipe = 100;
-      const limitedDeltaX = Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
+    // Calculate velocity for smoother interactions
+    const now = Date.now();
+    const timeDelta = now - lastTime;
+    const velocityX = timeDelta > 0 ? (touch.clientX - lastX) / timeDelta : 0;
+    const velocityY = timeDelta > 0 ? (touch.clientY - lastY) / timeDelta : 0;
 
-      setSwipedItem({
-        entryId,
-        itemIndex,
-        offsetX: limitedDeltaX
-      });
+    // Update last position for velocity tracking
+    gestureStartRef.current.lastX = touch.clientX;
+    gestureStartRef.current.lastY = touch.clientY;
+    gestureStartRef.current.lastTime = now;
+    gestureStartRef.current.velocityX = velocityX;
+    gestureStartRef.current.velocityY = velocityY;
+
+    // Determine gesture type on first significant movement
+    if (!gestureType && (absDeltaX > 5 || absDeltaY > 5)) {
+      // If started from grip icon and moving vertically, it's a drag
+      if (isGripIcon && absDeltaY > absDeltaX) {
+        gestureStartRef.current.gestureType = 'drag';
+      }
+      // If moving horizontally (regardless of where started), it's a swipe
+      else if (absDeltaX > absDeltaY && absDeltaX > 10) {
+        gestureStartRef.current.gestureType = 'swipe';
+      }
+    }
+
+    const currentGestureType = gestureStartRef.current.gestureType;
+
+    // Handle swipe gesture
+    if (currentGestureType === 'swipe') {
+      // Only proceed if horizontal movement is dominant
+      if (absDeltaX > 10) {
+        e.preventDefault(); // Prevent scrolling during swipe
+
+        // Apply resistance at extremes for natural feel
+        const maxSwipe = 120;
+        let limitedDeltaX = deltaX;
+
+        // Apply easing at extremes
+        if (Math.abs(deltaX) > maxSwipe) {
+          const overflow = Math.abs(deltaX) - maxSwipe;
+          const resistance = Math.log(overflow + 1) * 10;
+          limitedDeltaX = deltaX > 0 ? maxSwipe + resistance : -(maxSwipe + resistance);
+        }
+
+        setGestureState({
+          type: 'swipe',
+          entryId,
+          itemIndex,
+          offsetX: limitedDeltaX,
+          velocityX
+        });
+      }
+    }
+    // Handle drag gesture
+    else if (currentGestureType === 'drag') {
+      // Only proceed if vertical movement is dominant
+      if (absDeltaY > 10) {
+        e.preventDefault(); // Prevent scrolling during drag
+
+        // Get or create drag preview
+        if (!dragPreview) {
+          const entry = entries[selectedDate]?.find(e => e.id === entryId);
+          if (entry && entry.items[itemIndex]) {
+            setDragPreview({
+              x: touch.clientX,
+              y: touch.clientY,
+              item: entry.items[itemIndex]
+            });
+            setDraggedItem({ entryId, itemIndex });
+          }
+        } else {
+          // Update preview position
+          setDragPreview(prev => ({
+            ...prev,
+            x: touch.clientX,
+            y: touch.clientY
+          }));
+        }
+
+        setGestureState({
+          type: 'drag',
+          entryId,
+          itemIndex,
+          currentY: touch.clientY
+        });
+      }
     }
   };
 
-  const handleItemTouchEnd = (e, entryId, itemIndex) => {
-    if (!swipedItem || !swipeStartRef.current) {
-      swipeStartRef.current = null;
-      return;
-    }
+  const handleUnifiedTouchEnd = async (e) => {
+    if (!gestureStartRef.current) return;
 
-    const { offsetX } = swipedItem;
-    const swipeThreshold = 50; // Minimum swipe distance to trigger action
+    const { gestureType, entryId, itemIndex, velocityX } = gestureStartRef.current;
 
-    // Swipe right = Edit
-    if (offsetX > swipeThreshold) {
-      const entry = entries[selectedDate].find(e => e.id === entryId);
-      if (entry && entry.items[itemIndex]) {
-        startEditNutrition(entryId, itemIndex, entry.items[itemIndex]);
+    // Handle swipe gesture completion
+    if (gestureType === 'swipe' && gestureState?.type === 'swipe') {
+      const { offsetX } = gestureState;
+
+      // Velocity-based threshold: faster swipes need less distance
+      const baseThreshold = 60;
+      const velocityThreshold = Math.abs(velocityX || 0) > 0.5 ? 40 : baseThreshold;
+
+      // Swipe right = Edit
+      if (offsetX > velocityThreshold) {
+        const entry = entries[selectedDate]?.find(e => e.id === entryId);
+        if (entry && entry.items[itemIndex]) {
+          startEditNutrition(entryId, itemIndex, entry.items[itemIndex]);
+        }
       }
+      // Swipe left = Delete
+      else if (offsetX < -velocityThreshold) {
+        deleteIndividualItem(selectedDate, entryId, itemIndex);
+      }
+
+      // Reset with animation
+      setGestureState(null);
     }
-    // Swipe left = Delete
-    else if (offsetX < -swipeThreshold) {
-      deleteIndividualItem(selectedDate, entryId, itemIndex);
+    // Handle drag gesture completion
+    else if (gestureType === 'drag' && gestureState?.type === 'drag') {
+      const touch = e.changedTouches[0];
+      const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+      const itemDiv = targetElement?.closest('[data-item-drop-target]');
+
+      if (itemDiv) {
+        const targetEntryId = itemDiv.getAttribute('data-entry-id');
+        const targetItemIndex = parseInt(itemDiv.getAttribute('data-item-index'), 10);
+
+        if (targetEntryId && !isNaN(targetItemIndex)) {
+          await handleDrop(targetEntryId, targetItemIndex);
+        }
+      }
+
+      // Clean up drag state
+      setDraggedItem(null);
+      setDragPreview(null);
+      setGestureState(null);
+    }
+    // No significant gesture detected - just a tap
+    else {
+      // Clean up any state
+      setGestureState(null);
+      setDraggedItem(null);
+      setDragPreview(null);
     }
 
-    // Reset swipe state
-    setSwipedItem(null);
-    swipeStartRef.current = null;
+    // Reset gesture tracking
+    gestureStartRef.current = null;
   };
 
   // Delete individual item from entry
@@ -1500,92 +1611,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
     setDragPreview(null);
   };
 
-  // Touch event handlers for mobile drag and drop
-  const handleTouchStart = (e, entryId, itemIndex) => {
-    // Only start drag if not editing
-    if (editingNutrition !== null) return;
-
-    e.stopPropagation(); // Prevent bubbling
-
-    const touch = e.touches[0];
-    setTouchDragState({
-      entryId,
-      itemIndex,
-      startY: touch.clientY,
-      currentY: touch.clientY,
-      startX: touch.clientX,
-      isDragging: false // Only set to true after moving a bit
-    });
-    setDraggedItem({ entryId, itemIndex });
-
-    // Get the item data for preview
-    const entry = entries[selectedDate]?.find(e => e.id === entryId);
-    if (entry && entry.items[itemIndex]) {
-      setDragPreview({
-        x: touch.clientX,
-        y: touch.clientY,
-        item: entry.items[itemIndex]
-      });
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (!touchDragState) return;
-
-    const touch = e.touches[0];
-    const deltaY = Math.abs(touch.clientY - touchDragState.startY);
-    const deltaX = Math.abs(touch.clientX - touchDragState.startX);
-
-    // Update preview position
-    if (dragPreview) {
-      setDragPreview(prev => ({
-        ...prev,
-        x: touch.clientX,
-        y: touch.clientY
-      }));
-    }
-
-    // If moved more than 10px, consider it a drag and prevent scrolling
-    if (deltaY > 10 || deltaX > 10) {
-      e.preventDefault();
-      setTouchDragState({
-        ...touchDragState,
-        currentY: touch.clientY,
-        isDragging: true
-      });
-    }
-  };
-
-  const handleTouchEnd = async (e) => {
-    if (!touchDragState) return;
-
-    // Only process if it was actually a drag
-    if (!touchDragState.isDragging) {
-      setTouchDragState(null);
-      setDraggedItem(null);
-      setDragPreview(null);
-      return;
-    }
-
-    const touch = e.changedTouches[0];
-    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-
-    // Find the closest item div
-    const itemDiv = targetElement?.closest('[data-item-drop-target]');
-
-    if (itemDiv) {
-      const targetEntryId = itemDiv.getAttribute('data-entry-id');
-      const targetItemIndex = parseInt(itemDiv.getAttribute('data-item-index'), 10);
-
-      if (targetEntryId && !isNaN(targetItemIndex)) {
-        await handleDrop(targetEntryId, targetItemIndex);
-      }
-    }
-
-    setTouchDragState(null);
-    setDraggedItem(null);
-    setDragPreview(null);
-  };
+  // Note: Mobile touch handling is now unified in handleUnifiedTouchStart/Move/End
 
   // Goals
   const openGoalsModal = () => {
@@ -2237,8 +2263,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
                 <div className="space-y-2 mb-3">
                   {entry.items.map((item, idx) => {
-                    const isThisItemSwiped = swipedItem?.entryId === entry.id && swipedItem?.itemIndex === idx;
-                    const swipeOffset = isThisItemSwiped ? swipedItem.offsetX : 0;
+                    const isThisItemGesture = gestureState?.entryId === entry.id && gestureState?.itemIndex === idx;
+                    const swipeOffset = (isThisItemGesture && gestureState?.type === 'swipe') ? gestureState.offsetX : 0;
 
                     return (
                     <div
@@ -2246,17 +2272,17 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                       className="relative overflow-hidden"
                     >
                       {/* Swipe Action Backgrounds */}
-                      {isThisItemSwiped && (
+                      {isThisItemGesture && gestureState?.type === 'swipe' && (
                         <>
                           {/* Edit background (right swipe) */}
                           {swipeOffset > 0 && (
-                            <div className="absolute inset-y-0 left-0 flex items-center px-4 bg-purple-500">
+                            <div className="absolute inset-y-0 left-0 flex items-center px-4 bg-purple-500 rounded-lg">
                               <Edit2 size={20} className="text-white" />
                             </div>
                           )}
                           {/* Delete background (left swipe) */}
                           {swipeOffset < 0 && (
-                            <div className="absolute inset-y-0 right-0 flex items-center px-4 bg-red-500">
+                            <div className="absolute inset-y-0 right-0 flex items-center px-4 bg-red-500 rounded-lg">
                               <Trash2 size={20} className="text-white" />
                             </div>
                           )}
@@ -2269,11 +2295,14 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                         data-item-index={idx}
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(entry.id, idx)}
-                        onTouchStart={(e) => handleItemTouchStart(e, entry.id, idx)}
-                        onTouchMove={(e) => handleItemTouchMove(e, entry.id, idx)}
-                        onTouchEnd={(e) => handleItemTouchEnd(e, entry.id, idx)}
-                        className={`bg-gray-50 rounded-lg p-3 transition-transform ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
-                        style={{ transform: `translateX(${swipeOffset}px)` }}
+                        onTouchStart={(e) => handleUnifiedTouchStart(e, entry.id, idx, false)}
+                        onTouchMove={handleUnifiedTouchMove}
+                        onTouchEnd={handleUnifiedTouchEnd}
+                        className={`bg-gray-50 rounded-lg p-3 ${draggedItem?.entryId === entry.id && draggedItem?.itemIndex === idx ? 'opacity-50' : ''}`}
+                        style={{
+                          transform: `translateX(${swipeOffset}px)`,
+                          transition: swipeOffset === 0 ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : 'none'
+                        }}
                       >
                         {editingNutrition?.entryId === entry.id && editingNutrition?.itemIndex === idx ? (
                           <div>
@@ -2302,9 +2331,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, entry.id, idx)}
                                     onDragEnd={handleDragEnd}
-                                    onTouchStart={(e) => handleTouchStart(e, entry.id, idx)}
-                                    onTouchMove={handleTouchMove}
-                                    onTouchEnd={handleTouchEnd}
+                                    onTouchStart={(e) => handleUnifiedTouchStart(e, entry.id, idx, true)}
+                                    onTouchMove={handleUnifiedTouchMove}
+                                    onTouchEnd={handleUnifiedTouchEnd}
                                     className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
                                     style={{ touchAction: 'none' }}
                                   >
