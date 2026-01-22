@@ -277,8 +277,30 @@ const CalorieTracker = () => {
   const [swipedItem, setSwipedItem] = useState(null); // { entryId, itemIndex, offsetX }
   const swipeStartRef = useRef(null); // { x, entryId, itemIndex }
 
+  // Keep track of current entries and session for auth listener
+  const entriesRef = useRef(entries);
+  const sessionRef = useRef(session);
+
   // Store anonymous entries before authentication
   const anonymousEntriesRef = useRef(null);
+
+  // Update refs when state changes
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  // Capture anonymous entries when user logs in
+  useEffect(() => {
+    // If transitioning from no session to having a session, save current entries
+    if (!sessionRef.current && session?.user && Object.keys(entriesRef.current).length > 0) {
+      console.log('Capturing anonymous entries for migration:', entriesRef.current);
+      anonymousEntriesRef.current = { ...entriesRef.current };
+    }
+  }, [session?.user]);
 
   // Auth listener
   useEffect(() => {
@@ -288,11 +310,6 @@ const CalorieTracker = () => {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      // If user is signing in and we have anonymous entries, save them
-      if (session && (_event === 'SIGNED_IN' || _event === 'USER_UPDATED') && Object.keys(entries).length > 0) {
-        anonymousEntriesRef.current = { ...entries };
-      }
-
       setSession(session);
 
       if (!session) {
@@ -308,7 +325,7 @@ const CalorieTracker = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, [entries]);
+  }, []);
 
   useEffect(() => {
     if (!visibleSourceKey) return;
@@ -408,7 +425,7 @@ const CalorieTracker = () => {
 
   // Migrate anonymous entries to authenticated user's account
   const migrateAnonymousEntries = useCallback(async () => {
-    if (!session?.user || !anonymousEntriesRef.current) return;
+    if (!session?.user || !anonymousEntriesRef.current) return false;
 
     const anonymousEntries = anonymousEntriesRef.current;
     console.log('Migrating anonymous entries to authenticated account:', anonymousEntries);
@@ -439,21 +456,20 @@ const CalorieTracker = () => {
 
     // Clear the ref after migration
     anonymousEntriesRef.current = null;
-
-    // Reload data to show migrated entries
-    await loadAllData();
-  }, [session?.user, loadAllData]);
+    return true;
+  }, [session?.user]);
 
   useEffect(() => {
     if (session?.user) {
-      loadAllData().then(() => {
-        // After loading existing data, migrate anonymous entries if any
-        if (anonymousEntriesRef.current) {
-          migrateAnonymousEntries();
-        }
-      });
+      (async () => {
+        // First, migrate anonymous entries if any
+        await migrateAnonymousEntries();
+        // Then load all data (including migrated entries)
+        await loadAllData();
+      })();
     }
-  }, [loadAllData, migrateAnonymousEntries, session?.user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user]);
 
   useEffect(() => {
     setSelectedDate(getLocalDateString());
