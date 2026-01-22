@@ -1875,9 +1875,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
             {/* Mobile Layout: Macros left, Calories right */}
             <div className="lg:hidden">
-              <div className={`flex gap-4 items-start ${session && 'mb-4'}`}>
+              <div className={`flex gap-4 items-center ${session && 'mb-4'}`}>
                 {/* Macros - Left Side */}
-                <div className={`flex-1 flex justify-center ${goals ? 'space-y-2' : 'space-y-1'}`}>
+                <div className="flex-1 flex justify-center">
                   <div className={goals ? 'space-y-2' : 'space-y-1'}>
                   {['protein', 'carbs', 'fat'].map(macro => (
                     <div key={macro}>
@@ -1899,7 +1899,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                 </div>
 
                 {/* Calories - Right Side */}
-                <div className="flex-shrink-0">
+                <div className="flex-1 flex justify-center">
                   <div className="bg-white rounded-xl shadow-lg px-5 py-3 text-center">
                     <div className="text-3xl font-bold text-purple-600 leading-none">{getDailyTotal(selectedDate, 'calories')}</div>
                     <div className="text-xs text-gray-600 mt-1">Calories</div>
@@ -1987,7 +1987,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {messages.length === 0 && !pendingFoods && !processingError && (
               <div className="p-4 border-b border-gray-200 bg-purple-50">
                 <p className="text-sm text-gray-600 text-center">
-                  Start here! Tell me what you ate.
+                  No entries yet, get started below
                 </p>
               </div>
             )}
