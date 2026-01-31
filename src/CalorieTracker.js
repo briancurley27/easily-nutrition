@@ -2368,7 +2368,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                   onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
                                   onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
                                   onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                  className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
+                                  className="font-bold text-lg text-gray-900 underline decoration-dotted underline-offset-2"
                                   title={`Source: ${item.source || 'unknown'}`}
                                   aria-label={`Calories source: ${item.source || 'unknown'}`}
                                 >
@@ -2377,7 +2377,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                 {visibleSourceKey === `${entry.id}-${idx}` && (() => {
                                   const { displayName, url } = parseSource(item.source);
                                   return (
-                                    <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
                                       Source: {url ? (
                                         <a
                                           href={url}
