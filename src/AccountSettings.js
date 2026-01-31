@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mail, Lock, Download, Target, Check, AlertCircle } from 'lucide-react';
+import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
 const AccountSettings = ({
@@ -181,6 +181,20 @@ const AccountSettings = ({
     } catch (error) {
       console.error('Error sending password reset:', error);
       setMessage({ type: 'error', text: error.message || 'Failed to send password reset email' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    setLoading(true);
+    try {
+      await supabase.auth.signOut();
+      onClose(); // Close settings modal after logout
+    } catch (error) {
+      console.error('Error logging out:', error);
+      setMessage({ type: 'error', text: 'Failed to log out' });
     } finally {
       setLoading(false);
     }
@@ -437,6 +451,22 @@ const AccountSettings = ({
                 >
                   <Lock size={18} />
                   {loading ? 'Sending...' : 'Send Password Reset Email'}
+                </button>
+              </div>
+
+              {/* Logout Section */}
+              <div className="border-t border-gray-200 pt-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Logout</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Sign out of your account on this device.
+                </p>
+                <button
+                  onClick={handleLogout}
+                  disabled={loading}
+                  className="px-6 py-3 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <LogOut size={18} />
+                  {loading ? 'Logging out...' : 'Logout'}
                 </button>
               </div>
             </div>

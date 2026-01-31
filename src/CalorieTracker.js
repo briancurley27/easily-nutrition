@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, LogOut, Trash2, Edit2, X, ChevronLeft, ChevronRight, Target, Eye, EyeOff, GripVertical, Plus, Settings } from 'lucide-react';
+import { Send, Trash2, Edit2, X, ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, Plus, Settings } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 import AccountSettings from './AccountSettings';
@@ -247,8 +247,6 @@ const CalorieTracker = () => {
   const [nutritionEditValues, setNutritionEditValues] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [goals, setGoals] = useState(null);
-  const [showGoalsModal, setShowGoalsModal] = useState(false);
-  const [goalInputs, setGoalInputs] = useState({ calories: '', protein: '', carbs: '', fat: '' });
   const [visibleSourceKey, setVisibleSourceKey] = useState(null);
   const [processingError, setProcessingError] = useState(null); // { message, details }
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -587,10 +585,6 @@ const CalorieTracker = () => {
       setAuthMessage('Check your email for a password reset link!');
       setAuthMode('login');
     }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
   };
 
   const handleAuthSubmit = (e) => {
@@ -1640,59 +1634,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
   // Note: Mobile touch handling is now unified in handleUnifiedTouchStart/Move/End
 
-  // Goals
-  const openGoalsModal = () => {
-    if (goals) {
-      setGoalInputs({
-        calories: goals.calories?.toString() || '',
-        protein: goals.protein?.toString() || '',
-        carbs: goals.carbs?.toString() || '',
-        fat: goals.fat?.toString() || ''
-      });
-    } else {
-      setGoalInputs({ calories: '', protein: '', carbs: '', fat: '' });
-    }
-    setShowGoalsModal(true);
-  };
-
-  const saveGoalsFromModal = async () => {
-    const hasAnyGoal = goalInputs.calories || goalInputs.protein || goalInputs.carbs || goalInputs.fat;
-    
-    if (hasAnyGoal) {
-      const newGoals = {
-        user_id: session.user.id,
-        calories: goalInputs.calories ? parseInt(goalInputs.calories) : null,
-        protein: goalInputs.protein ? parseInt(goalInputs.protein) : null,
-        carbs: goalInputs.carbs ? parseInt(goalInputs.carbs) : null,
-        fat: goalInputs.fat ? parseInt(goalInputs.fat) : null,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error } = await supabase.from('goals').upsert(newGoals, { onConflict: 'user_id' });
-      if (error) {
-        console.error('Error saving goals:', error);
-        return;
-      }
-
-      setGoals({
-        calories: newGoals.calories,
-        protein: newGoals.protein,
-        carbs: newGoals.carbs,
-        fat: newGoals.fat
-      });
-    } else {
-      await clearGoals();
-    }
-    setShowGoalsModal(false);
-  };
-
-  const clearGoals = async () => {
-    await supabase.from('goals').delete().eq('user_id', session.user.id);
-    setGoals(null);
-    setGoalInputs({ calories: '', protein: '', carbs: '', fat: '' });
-    setShowGoalsModal(false);
-  };
-
   // Utility functions
   const getDailyTotal = (date, type = 'calories') => {
     if (!entries[date]) return 0;
@@ -1841,37 +1782,6 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
         </div>
       )}
 
-      {/* Goals Modal */}
-      {showGoalsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Daily Goals</h2>
-              <button onClick={() => setShowGoalsModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">Set your daily nutrition targets. Leave blank any goals you don't want to track.</p>
-            <div className="space-y-4">
-              {['calories', 'protein', 'carbs', 'fat'].map(field => (
-                <div key={field}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">{field} {field !== 'calories' && '(g)'}</label>
-                  <input
-                    type="number"
-                    value={goalInputs[field]}
-                    onChange={(e) => setGoalInputs({...goalInputs, [field]: e.target.value})}
-                    placeholder={field === 'calories' ? 'e.g., 2000' : field === 'protein' ? 'e.g., 150' : field === 'carbs' ? 'e.g., 250' : 'e.g., 65'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={clearGoals} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Clear Goals</button>
-              <button onClick={saveGoalsFromModal} className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">Save Goals</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Signup Prompt Modal */}
       {showSignupPrompt && !session && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1963,14 +1873,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div className="flex items-center gap-4">
             {session ? (
               <>
-                <button onClick={openGoalsModal} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Set daily goals">
-                  <Target size={20} /><span className="hidden sm:inline">Goals</span>
-                </button>
                 <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Account settings">
                   <Settings size={20} /><span className="hidden sm:inline">Settings</span>
-                </button>
-                <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition">
-                  <LogOut size={20} /><span className="hidden sm:inline">Logout</span>
                 </button>
               </>
             ) : (
