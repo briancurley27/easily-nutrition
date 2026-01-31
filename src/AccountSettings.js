@@ -27,7 +27,6 @@ const AccountSettings = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [usernameError, setUsernameError] = useState('');
-  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
 
   // Track previous isOpen value to detect modal open/close
   const prevIsOpenRef = useRef(isOpen);
@@ -69,51 +68,6 @@ const AccountSettings = ({
       return 'Username can only contain letters, numbers, periods, and underscores';
     }
     return '';
-  };
-
-  // Check username availability
-  const checkUsernameAvailability = async (value) => {
-    if (!value || value === username) {
-      setUsernameError('');
-      return true;
-    }
-
-    const validationError = validateUsername(value);
-    if (validationError) {
-      setUsernameError(validationError);
-      return false;
-    }
-
-    setIsCheckingUsername(true);
-    const startTime = Date.now();
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('username', value.toLowerCase())
-        .single();
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('Error checking username:', error);
-        setUsernameError('Error checking username availability');
-        return false;
-      }
-
-      if (data) {
-        setUsernameError('Username is already taken');
-        return false;
-      }
-
-      setUsernameError('');
-      return true;
-    } finally {
-      // Ensure minimum 500ms delay so the "Checking..." message doesn't flash
-      const elapsed = Date.now() - startTime;
-      const remainingDelay = Math.max(0, 500 - elapsed);
-      await new Promise(resolve => setTimeout(resolve, remainingDelay));
-      setIsCheckingUsername(false);
-    }
   };
 
   // Handle username update
@@ -401,7 +355,6 @@ const AccountSettings = ({
                         setUsernameInput(e.target.value);
                         setUsernameError('');
                       }}
-                      onBlur={() => checkUsernameAvailability(usernameInput.trim())}
                       placeholder="Enter username"
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
                         usernameError ? 'border-red-500' : 'border-gray-300'
@@ -413,9 +366,6 @@ const AccountSettings = ({
                     </p>
                     {usernameError && (
                       <p className="text-sm text-red-600 mt-1">{usernameError}</p>
-                    )}
-                    {isCheckingUsername && (
-                      <p className="text-sm text-gray-500 mt-1">Checking availability...</p>
                     )}
                   </div>
                   <button
