@@ -76,6 +76,8 @@ const AccountSettings = ({
     }
 
     setIsCheckingUsername(true);
+    const startTime = Date.now();
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -97,6 +99,10 @@ const AccountSettings = ({
       setUsernameError('');
       return true;
     } finally {
+      // Ensure minimum 500ms delay so the "Checking..." message doesn't flash
+      const elapsed = Date.now() - startTime;
+      const remainingDelay = Math.max(0, 500 - elapsed);
+      await new Promise(resolve => setTimeout(resolve, remainingDelay));
       setIsCheckingUsername(false);
     }
   };

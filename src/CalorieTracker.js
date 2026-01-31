@@ -1867,7 +1867,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
           <div>
             <h1 className="text-2xl font-bold text-purple-600">Easily</h1>
             <p className="text-sm text-gray-600">
-              {session ? (username || session.user.email) : 'Track your food. Easily.'}
+              {session ? (username ? `Hello, ${username}` : session.user.email) : 'Track your food. Easily.'}
             </p>
           </div>
           <div className="flex items-center gap-4">
