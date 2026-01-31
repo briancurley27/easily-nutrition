@@ -562,7 +562,12 @@ const CalorieTracker = () => {
     });
 
     setAuthLoading(false);
-    if (error) setAuthError(error.message);
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      // Close modal on successful login
+      setShowAuthModal(false);
+    }
   };
 
   const handlePasswordReset = async () => {

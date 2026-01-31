@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Add constraints for username validation
 ALTER TABLE profiles
   ADD CONSTRAINT username_length CHECK (char_length(username) >= 3 AND char_length(username) <= 20),
-  ADD CONSTRAINT username_format CHECK (username ~ '^[a-zA-Z0-9_-]+$');
+  ADD CONSTRAINT username_format CHECK (username ~ '^[a-zA-Z0-9_.]+$');
 
 -- Create index for username lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username);

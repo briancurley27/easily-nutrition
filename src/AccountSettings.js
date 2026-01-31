@@ -56,8 +56,8 @@ const AccountSettings = ({
     if (value.length > 20) {
       return 'Username must be 20 characters or less';
     }
-    if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-      return 'Username can only contain letters, numbers, underscores, and hyphens';
+    if (!/^[a-zA-Z0-9_.]+$/.test(value)) {
+      return 'Username can only contain letters, numbers, periods, and underscores';
     }
     return '';
   };
@@ -371,7 +371,7 @@ const AccountSettings = ({
                       maxLength={20}
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      3-20 characters, letters, numbers, underscores, and hyphens only
+                      3-20 characters, letters, numbers, periods, and underscores only
                     </p>
                     {usernameError && (
                       <p className="text-sm text-red-600 mt-1">{usernameError}</p>
