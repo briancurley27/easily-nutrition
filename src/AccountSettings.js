@@ -420,7 +420,7 @@ const AccountSettings = ({
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || isCheckingUsername || !!usernameError || !usernameInput.trim()}
+                    disabled={loading || !!usernameError || !usernameInput.trim()}
                     className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? 'Updating...' : username ? 'Update Username' : 'Set Username'}
