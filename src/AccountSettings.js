@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -29,8 +29,14 @@ const AccountSettings = ({
   const [usernameError, setUsernameError] = useState('');
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
 
+  // Track previous isOpen value to detect modal open/close
+  const prevIsOpenRef = useRef(isOpen);
+
   // Initialize form values when modal opens
   useEffect(() => {
+    const wasJustOpened = isOpen && !prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
     if (isOpen && session) {
       setUsernameInput(username || '');
       setEmailInput(session.user.email || '');
@@ -40,8 +46,11 @@ const AccountSettings = ({
         carbs: goals?.carbs?.toString() || '',
         fat: goals?.fat?.toString() || ''
       });
-      setMessage({ type: '', text: '' });
-      setUsernameError('');
+      // Only clear message when modal first opens, not when username/goals update
+      if (wasJustOpened) {
+        setMessage({ type: '', text: '' });
+        setUsernameError('');
+      }
     }
   }, [isOpen, session, username, goals]);
 
