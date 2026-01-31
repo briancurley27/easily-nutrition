@@ -2313,51 +2313,57 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                 )}
                                 <span className="text-gray-800 font-medium">{item.item}</span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="relative" data-source-tooltip="true">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const key = `${entry.id}-${idx}`;
-                                      setVisibleSourceKey(prev => (prev === key ? null : key));
-                                    }}
-                                    onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                    onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                    onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
-                                    onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
-                                    className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
-                                    title={`Source: ${item.source || 'unknown'}`}
-                                    aria-label={`Calories source: ${item.source || 'unknown'}`}
-                                  >
-                                    {item.error ? '?' : item.calories} cal
-                                  </button>
-                                  {visibleSourceKey === `${entry.id}-${idx}` && (() => {
-                                    const { displayName, url } = parseSource(item.source);
-                                    return (
-                                      <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
-                                        Source: {url ? (
-                                          <a
-                                            href={url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="underline hover:text-purple-300"
-                                            onClick={(e) => e.stopPropagation()}
-                                          >
-                                            {displayName}
-                                          </a>
-                                        ) : displayName}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                                <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 text-xs">Edit</button>
-                                <button onClick={() => deleteIndividualItem(selectedDate, entry.id, idx)} className="text-red-600 hover:text-red-800 text-xs" title="Delete item">Delete</button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => startEditNutrition(entry.id, idx, item)} className="text-purple-600 hover:text-purple-800 p-1" title="Edit nutrition">
+                                  <Edit2 size={16} />
+                                </button>
+                                <button onClick={() => deleteIndividualItem(selectedDate, entry.id, idx)} className="text-red-600 hover:text-red-800 p-1" title="Delete item">
+                                  <Trash2 size={16} />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex gap-4 text-sm text-gray-600">
-                              <span>P: {item.protein}g</span>
-                              <span>C: {item.carbs}g</span>
-                              <span>F: {item.fat}g</span>
+                            <div className="flex justify-between items-center text-sm text-gray-600">
+                              <div className="flex gap-4">
+                                <span>P: {item.protein}g</span>
+                                <span>C: {item.carbs}g</span>
+                                <span>F: {item.fat}g</span>
+                              </div>
+                              <div className="relative" data-source-tooltip="true">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const key = `${entry.id}-${idx}`;
+                                    setVisibleSourceKey(prev => (prev === key ? null : key));
+                                  }}
+                                  onMouseEnter={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                  onMouseLeave={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                  onFocus={() => setVisibleSourceKey(`${entry.id}-${idx}`)}
+                                  onBlur={() => setVisibleSourceKey(prev => (prev === `${entry.id}-${idx}` ? null : prev))}
+                                  className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2"
+                                  title={`Source: ${item.source || 'unknown'}`}
+                                  aria-label={`Calories source: ${item.source || 'unknown'}`}
+                                >
+                                  {item.error ? '?' : item.calories} cal
+                                </button>
+                                {visibleSourceKey === `${entry.id}-${idx}` && (() => {
+                                  const { displayName, url } = parseSource(item.source);
+                                  return (
+                                    <div className="absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                      Source: {url ? (
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="underline hover:text-purple-300"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {displayName}
+                                        </a>
+                                      ) : displayName}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </div>
                         )}
