@@ -121,8 +121,12 @@ const AccountSettings = ({
     e.preventDefault();
     const trimmedUsername = usernameInput.trim();
 
-    const isAvailable = await checkUsernameAvailability(trimmedUsername);
-    if (!isAvailable) return;
+    // Validate without the delay (already validated on blur)
+    const validationError = validateUsername(trimmedUsername);
+    if (validationError) {
+      setUsernameError(validationError);
+      return;
+    }
 
     setLoading(true);
     setMessage({ type: '', text: '' });
@@ -141,7 +145,12 @@ const AccountSettings = ({
       setMessage({ type: 'success', text: 'Username updated successfully!' });
     } catch (error) {
       console.error('Error updating username:', error);
-      setMessage({ type: 'error', text: error.message || 'Failed to update username' });
+      // Check if it's a uniqueness constraint error
+      if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
+        setMessage({ type: 'error', text: 'Username is already taken' });
+      } else {
+        setMessage({ type: 'error', text: error.message || 'Failed to update username' });
+      }
     } finally {
       setLoading(false);
     }
