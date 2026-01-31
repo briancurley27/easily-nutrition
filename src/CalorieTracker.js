@@ -2348,7 +2348,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                                 {visibleSourceKey === `${entry.id}-${idx}` && (() => {
                                   const { displayName, url } = parseSource(item.source);
                                   return (
-                                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
+                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg z-10">
                                       Source: {url ? (
                                         <a
                                           href={url}
