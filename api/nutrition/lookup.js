@@ -236,18 +236,14 @@ async function lookupUSDA(item, apiKey) {
 
   try {
     // Step 1: Search for the food
-    // For generic foods (no brand), exclude Branded data type to get standard reference data
     const params = new URLSearchParams({
       api_key: apiKey,
       query: query,
-      pageSize: '10', // Get more results for better matching
+      pageSize: '25', // Get more results for better matching
     });
 
-    // Filter to non-branded data types when no brand is specified
-    // Priority: Survey (FNDDS) > SR Legacy > Foundation (best for generic foods)
-    if (!hasBrand) {
-      params.append('dataType', 'Survey (FNDDS),SR Legacy,Foundation');
-    }
+    // Note: We fetch all data types and use smart matching to filter
+    // The dataType filter with comma-separated values doesn't work well
 
     const searchResponse = await fetch(`${USDA_API_BASE}/foods/search?${params}`);
 
@@ -263,11 +259,18 @@ async function lookupUSDA(item, apiKey) {
       return null;
     }
 
-    // Find the best match using smart matching logic
-    const food = findBestFoodMatch(searchData.foods, item);
+    console.log(`[USDA] Got ${searchData.foods.length} results for "${query}"`);
 
-    console.log(`[USDA] Search matched: "${food.description}" (FDC ID: ${food.fdcId}, Type: ${food.dataType})`);
-    console.log(`[USDA] All results:`, searchData.foods.slice(0, 5).map(f => `${f.description} (${food.dataType})`));
+    // Find the best match using smart matching logic
+    const food = findBestFoodMatch(searchData.foods, item, hasBrand);
+
+    if (!food) {
+      console.log(`[USDA] No suitable match found for: ${query}`);
+      return null;
+    }
+
+    console.log(`[USDA] Selected: "${food.description}" (FDC ID: ${food.fdcId}, Type: ${food.dataType})`);
+    console.log(`[USDA] Top 5 results:`, searchData.foods.slice(0, 5).map(f => `${f.description} [${f.dataType}]`));
 
     // Step 2: Get detailed food data with portions
     const detailResponse = await fetch(`${USDA_API_BASE}/food/${food.fdcId}?api_key=${apiKey}`);
@@ -327,9 +330,9 @@ async function lookupUSDA(item, apiKey) {
 
 /**
  * Find the best food match from USDA search results
- * Prioritizes: raw over cooked, simple over complex, matches description
+ * Prioritizes: raw over cooked, non-branded for generic queries, simple over complex
  */
-function findBestFoodMatch(foods, item) {
+function findBestFoodMatch(foods, item, hasBrand = false) {
   if (!foods || foods.length === 0) return null;
   if (foods.length === 1) return foods[0];
 
@@ -338,10 +341,18 @@ function findBestFoodMatch(foods, item) {
   // Words that indicate a processed/cooked version (avoid for generic queries)
   const cookedIndicators = ['baked', 'cooked', 'fried', 'roasted', 'grilled', 'steamed', 'boiled', 'sauteed', 'braised'];
 
+  // Words that indicate it's a recipe/dish, not the base food (penalize heavily)
+  const recipeIndicators = ['sandwich', 'salad', 'soup', 'stew', 'casserole', 'pie', 'cake', 'with', 'and'];
+
   // Score each food item
   const scored = foods.map(food => {
     const desc = food.description.toLowerCase();
     let score = 0;
+
+    // CRITICAL: For generic queries (no brand), heavily penalize branded items
+    if (!hasBrand && food.dataType === 'Branded') {
+      score -= 200;
+    }
 
     // Exact match or starts with query is best
     if (desc === queryLower || desc.startsWith(queryLower + ',') || desc.startsWith(queryLower + ' ')) {
@@ -358,24 +369,36 @@ function findBestFoodMatch(foods, item) {
     if (!userSpecifiedCooked) {
       cookedIndicators.forEach(indicator => {
         if (desc.includes(indicator)) {
-          score -= 30;
+          score -= 40;
         }
       });
     }
 
+    // Penalize recipes/dishes that contain the food but aren't the food itself
+    recipeIndicators.forEach(indicator => {
+      if (desc.includes(indicator) && !queryLower.includes(indicator)) {
+        score -= 50;
+      }
+    });
+
     // Prefer Survey (FNDDS) for common foods - has good portion data
     if (food.dataType === 'Survey (FNDDS)') {
-      score += 20;
+      score += 30;
     }
 
     // Prefer SR Legacy for comprehensive data
     if (food.dataType === 'SR Legacy') {
-      score += 15;
+      score += 25;
+    }
+
+    // Foundation is also good
+    if (food.dataType === 'Foundation') {
+      score += 20;
     }
 
     // Penalize very long descriptions (usually too specific)
-    if (desc.length > 50) {
-      score -= 10;
+    if (desc.length > 60) {
+      score -= 15;
     }
 
     // Bonus if description contains the exact query word
@@ -383,14 +406,19 @@ function findBestFoodMatch(foods, item) {
       score += 25;
     }
 
-    return { food, score };
+    // Bonus for simple, short descriptions
+    if (desc.length < 30) {
+      score += 10;
+    }
+
+    return { food, score, desc };
   });
 
   // Sort by score descending
   scored.sort((a, b) => b.score - a.score);
 
-  console.log(`[USDA] Match scores:`, scored.slice(0, 5).map(s =>
-    `${s.food.description.substring(0, 40)}... (${s.score})`
+  console.log(`[USDA] Match scores:`, scored.slice(0, 8).map(s =>
+    `"${s.food.description.substring(0, 35)}" [${s.food.dataType}] = ${s.score}`
   ));
 
   return scored[0].food;
