@@ -330,7 +330,7 @@ async function lookupUSDA(item, apiKey) {
 
 /**
  * Find the best food match from USDA search results
- * Prioritizes: raw over cooked, non-branded for generic queries, simple over complex
+ * Prioritizes: raw over cooked, non-branded for generic queries (only if good alternatives exist)
  */
 function findBestFoodMatch(foods, item, hasBrand = false) {
   if (!foods || foods.length === 0) return null;
@@ -344,15 +344,10 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
   // Words that indicate it's a recipe/dish, not the base food (penalize heavily)
   const recipeIndicators = ['sandwich', 'salad', 'soup', 'stew', 'casserole', 'pie', 'cake', 'with', 'and'];
 
-  // Score each food item
+  // Score each food item (WITHOUT branded penalty first)
   const scored = foods.map(food => {
     const desc = food.description.toLowerCase();
     let score = 0;
-
-    // CRITICAL: For generic queries (no brand), heavily penalize branded items
-    if (!hasBrand && food.dataType === 'Branded') {
-      score -= 200;
-    }
 
     // Exact match or starts with query is best
     if (desc === queryLower || desc.startsWith(queryLower + ',') || desc.startsWith(queryLower + ' ')) {
@@ -411,14 +406,34 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
       score += 10;
     }
 
-    return { food, score, desc };
+    return { food, score, desc, isBranded: food.dataType === 'Branded' };
   });
+
+  // Check if there are good non-branded alternatives
+  const nonBrandedResults = scored.filter(s => !s.isBranded);
+  const bestNonBrandedScore = nonBrandedResults.length > 0
+    ? Math.max(...nonBrandedResults.map(s => s.score))
+    : -999;
+
+  // Only penalize branded items if there's a good non-branded alternative (score >= 50)
+  // This way "Whopper" still matches the branded Whopper, but "banana" prefers the generic
+  if (!hasBrand && bestNonBrandedScore >= 50) {
+    scored.forEach(s => {
+      if (s.isBranded) {
+        s.score -= 200;
+        s.penalizedForBranded = true;
+      }
+    });
+    console.log(`[USDA] Good non-branded alternatives exist (best score: ${bestNonBrandedScore}), penalizing branded items`);
+  } else {
+    console.log(`[USDA] No good non-branded alternatives (best: ${bestNonBrandedScore}), keeping branded items`);
+  }
 
   // Sort by score descending
   scored.sort((a, b) => b.score - a.score);
 
   console.log(`[USDA] Match scores:`, scored.slice(0, 8).map(s =>
-    `"${s.food.description.substring(0, 35)}" [${s.food.dataType}] = ${s.score}`
+    `"${s.food.description.substring(0, 35)}" [${s.food.dataType}] = ${s.score}${s.penalizedForBranded ? ' (branded penalty)' : ''}`
   ));
 
   return scored[0].food;
