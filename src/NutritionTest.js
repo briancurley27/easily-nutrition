@@ -412,16 +412,19 @@ function ResultCard({ title, result, loading, color }) {
                     <tr style={{ borderBottom: '1px solid #eee', background: '#f9f9f9' }}>
                       <td colSpan={6} style={{ padding: '4px 8px', fontSize: '11px', color: '#888' }}>
                         {item.matchedName && (
-                          <span>USDA Match: <strong>{item.matchedName}</strong></span>
+                          <span>USDA: <strong>{item.matchedName}</strong></span>
                         )}
                         {item.fdcId && (
                           <span> | <a href={`https://fdc.nal.usda.gov/food-details/${item.fdcId}/nutrients`} target="_blank" rel="noreferrer">FDC #{item.fdcId}</a></span>
                         )}
-                        {item.debug?.per100g && (
-                          <span> | Per 100g: {item.debug.per100g.calories}cal, {item.debug.per100g.protein?.toFixed(1)}p, {item.debug.per100g.carbs?.toFixed(1)}c, {item.debug.per100g.fat?.toFixed(1)}f</span>
+                        {item.portion && (
+                          <span> | Portion: <strong>{item.portion}</strong> ({item.portionGrams}g)</span>
                         )}
-                        {item.gramsSource && (
-                          <span> | Scaling: {item.gramsSource}</span>
+                        {item.debug?.method && (
+                          <span> | {item.debug.method}</span>
+                        )}
+                        {item.debug?.per100g && !item.portion && (
+                          <span> | Per 100g: {item.debug.per100g.calories}cal, {item.debug.per100g.protein?.toFixed(1)}p</span>
                         )}
                       </td>
                     </tr>

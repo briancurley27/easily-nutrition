@@ -228,36 +228,36 @@ async function lookupNutrition(item, usdaApiKey, openaiApiKey) {
 
 /**
  * Look up food in USDA database
+ * Uses two-step process: search, then get detailed food data with portions
  */
 async function lookupUSDA(item, apiKey) {
   const query = item.brand ? `${item.brand} ${item.name}` : item.name;
 
   try {
+    // Step 1: Search for the food
     const params = new URLSearchParams({
       api_key: apiKey,
       query: query,
-      pageSize: '3',
+      pageSize: '5',
     });
 
-    const response = await fetch(`${USDA_API_BASE}/foods/search?${params}`);
+    const searchResponse = await fetch(`${USDA_API_BASE}/foods/search?${params}`);
 
-    if (!response.ok) {
-      console.error(`[USDA] API error: ${response.status}`);
+    if (!searchResponse.ok) {
+      console.error(`[USDA] Search API error: ${searchResponse.status}`);
       return null;
     }
 
-    const data = await response.json();
+    const searchData = await searchResponse.json();
 
-    if (!data.foods || data.foods.length === 0) {
+    if (!searchData.foods || searchData.foods.length === 0) {
       console.log(`[USDA] No results for: ${query}`);
       return null;
     }
 
-    // Get best match - prefer "raw" versions for generic foods
-    let food = data.foods[0];
-
-    // Try to find a better match (raw/plain version)
-    const betterMatch = data.foods.find(f => {
+    // Find best match - prefer "raw" versions for generic foods
+    let food = searchData.foods[0];
+    const betterMatch = searchData.foods.find(f => {
       const desc = f.description.toLowerCase();
       return desc.includes('raw') || desc.includes(query.toLowerCase() + ',');
     });
@@ -265,52 +265,166 @@ async function lookupUSDA(item, apiKey) {
       food = betterMatch;
     }
 
-    const nutrients = food.foodNutrients || [];
+    console.log(`[USDA] Search matched: "${food.description}" (FDC ID: ${food.fdcId})`);
+    console.log(`[USDA] All results:`, searchData.foods.map(f => `${f.description}`).slice(0, 5));
 
-    // Extract nutrition (per 100g) - log raw values for debugging
-    const getNutrient = (id) => {
-      const n = nutrients.find(n => n.nutrientId === id);
-      return n?.value || 0;
-    };
+    // Step 2: Get detailed food data with portions
+    const detailResponse = await fetch(`${USDA_API_BASE}/food/${food.fdcId}?api_key=${apiKey}`);
 
-    const per100g = {
-      calories: getNutrient(1008),
-      protein: getNutrient(1003),
-      carbs: getNutrient(1005),
-      fat: getNutrient(1004),
-    };
+    if (!detailResponse.ok) {
+      console.error(`[USDA] Detail API error: ${detailResponse.status}`);
+      // Fall back to search data scaling if detail fails
+      return lookupUSDAFallback(food, item);
+    }
 
-    // Log detailed debug info
-    console.log(`[USDA] Query: "${query}"`);
-    console.log(`[USDA] Matched: "${food.description}" (FDC ID: ${food.fdcId})`);
-    console.log(`[USDA] Data type: ${food.dataType}`);
-    console.log(`[USDA] Per 100g: cal=${per100g.calories}, p=${per100g.protein}, c=${per100g.carbs}, f=${per100g.fat}`);
-    console.log(`[USDA] Serving size: ${food.servingSize} ${food.servingSizeUnit || 'g'}`);
-    console.log(`[USDA] All results:`, data.foods.map(f => f.description).slice(0, 5));
+    const detailData = await detailResponse.json();
 
-    // Scale to user's quantity
-    const scaled = scaleToQuantity(per100g, item, food);
+    // Get available portions from USDA
+    const portions = detailData.foodPortions || [];
+    console.log(`[USDA] Available portions:`, portions.map(p =>
+      `${p.portionDescription || p.modifier || 'unnamed'} (${p.gramWeight}g)`
+    ));
 
-    console.log(`[USDA] Scaled (${item.quantity} ${item.unit}): cal=${scaled.calories}, p=${scaled.protein}, c=${scaled.carbs}, f=${scaled.fat}`);
+    // Find the best matching portion for user's input
+    const matchedPortion = findBestPortion(portions, item);
 
-    return {
-      ...scaled,
-      source: 'USDA',
-      sourceDetail: food.dataType,
-      fdcId: food.fdcId,
-      matchedName: food.description,
-      // Include debug info
-      debug: {
-        per100g,
-        servingSize: food.servingSize,
-        servingSizeUnit: food.servingSizeUnit,
-        scaledGrams: scaled.grams,
-      },
-    };
+    if (matchedPortion) {
+      // Use USDA's portion data - much more accurate!
+      const portionDesc = matchedPortion.portionDescription || matchedPortion.modifier || 'serving';
+      console.log(`[USDA] Using portion: "${portionDesc}" (${matchedPortion.gramWeight}g)`);
+
+      // Get nutrients and calculate for this portion
+      const nutrients = detailData.foodNutrients || [];
+      const result = calculateNutritionForPortion(nutrients, matchedPortion, item.quantity);
+
+      return {
+        ...result,
+        source: 'USDA',
+        sourceDetail: `${food.dataType} - ${portionDesc}`,
+        fdcId: food.fdcId,
+        matchedName: food.description,
+        portion: portionDesc,
+        portionGrams: matchedPortion.gramWeight,
+        debug: {
+          availablePortions: portions.map(p => `${p.portionDescription || p.modifier} (${p.gramWeight}g)`).slice(0, 6),
+          usedPortion: portionDesc,
+          portionGrams: matchedPortion.gramWeight,
+          method: 'USDA portion (no scaling needed)',
+        },
+      };
+    }
+
+    // No good portion match - fall back to per-100g scaling
+    console.log(`[USDA] No portion match found, falling back to per-100g scaling`);
+    return lookupUSDAFallback(food, item, detailData.foodNutrients);
+
   } catch (error) {
     console.error('[USDA] Lookup error:', error);
     return null;
   }
+}
+
+/**
+ * Find the best USDA portion match for user's input
+ */
+function findBestPortion(portions, item) {
+  if (!portions || portions.length === 0) return null;
+
+  const unit = (item.unit || 'piece').toLowerCase();
+  const foodName = item.name.toLowerCase();
+
+  // First priority: look for a portion that matches the food name (e.g., "1 banana" for banana)
+  const foodNamePortion = portions.find(p => {
+    const desc = (p.portionDescription || p.modifier || '').toLowerCase();
+    return desc.includes(`1 ${foodName}`) || desc === foodName;
+  });
+  if (foodNamePortion) return foodNamePortion;
+
+  // Second: match by unit type
+  const unitMappings = {
+    'piece': ['quantity not specified', '1 '],
+    'slice': ['slice'],
+    'cup': ['cup'],
+    'tbsp': ['tablespoon', 'tbsp'],
+    'tsp': ['teaspoon', 'tsp'],
+    'oz': ['ounce', 'oz'],
+  };
+
+  const unitMatches = unitMappings[unit] || [unit];
+  const unitPortion = portions.find(p => {
+    const desc = (p.portionDescription || p.modifier || '').toLowerCase();
+    return unitMatches.some(u => desc.includes(u));
+  });
+  if (unitPortion) return unitPortion;
+
+  // Third: "quantity not specified" is often the default serving
+  const defaultPortion = portions.find(p => {
+    const desc = (p.portionDescription || p.modifier || '').toLowerCase();
+    return desc.includes('quantity not specified');
+  });
+  if (defaultPortion) return defaultPortion;
+
+  // Last resort: first non-100g portion
+  const nonBasePortion = portions.find(p => p.gramWeight && p.gramWeight !== 100);
+  return nonBasePortion || null;
+}
+
+/**
+ * Calculate nutrition values for a specific USDA portion
+ * USDA nutrients are per 100g, so we scale by the portion's gram weight
+ */
+function calculateNutritionForPortion(nutrients, portion, quantity) {
+  const scale = (portion.gramWeight / 100) * quantity;
+
+  const getNutrient = (id) => {
+    // Detail API uses nested nutrient object
+    const n = nutrients.find(n => n.nutrient?.id === id || n.nutrientId === id);
+    const value = n?.amount ?? n?.value ?? 0;
+    return value * scale;
+  };
+
+  return {
+    calories: Math.round(getNutrient(1008)),
+    protein: Math.round(getNutrient(1003) * 10) / 10, // 1 decimal
+    carbs: Math.round(getNutrient(1005) * 10) / 10,
+    fat: Math.round(getNutrient(1004) * 10) / 10,
+  };
+}
+
+/**
+ * Fallback when portion data isn't available - use per-100g scaling
+ */
+function lookupUSDAFallback(food, item, detailNutrients = null) {
+  const nutrients = detailNutrients || food.foodNutrients || [];
+
+  const getNutrient = (id) => {
+    const n = nutrients.find(n => n.nutrientId === id || n.nutrient?.id === id);
+    return n?.value ?? n?.amount ?? 0;
+  };
+
+  const per100g = {
+    calories: getNutrient(1008),
+    protein: getNutrient(1003),
+    carbs: getNutrient(1005),
+    fat: getNutrient(1004),
+  };
+
+  console.log(`[USDA Fallback] Per 100g: cal=${per100g.calories}, p=${per100g.protein}, c=${per100g.carbs}, f=${per100g.fat}`);
+
+  const scaled = scaleToQuantity(per100g, item, food);
+
+  return {
+    ...scaled,
+    source: 'USDA',
+    sourceDetail: `${food.dataType} (scaled from 100g)`,
+    fdcId: food.fdcId,
+    matchedName: food.description,
+    debug: {
+      per100g,
+      method: 'Scaled from 100g (no portion match)',
+      scaledGrams: scaled.grams,
+    },
+  };
 }
 
 /**
