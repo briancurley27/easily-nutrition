@@ -4,6 +4,7 @@ require('dotenv').config({ path: '.env.local' });
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const openaiHandler = require('./api/openai/messages');
+const nutritionLookupHandler = require('./api/nutrition/lookup');
 
 const app = express();
 const PORT = 3001;
@@ -13,6 +14,9 @@ app.use('/api', express.json());
 
 // API route - handle OpenAI GPT messages
 app.post('/api/openai/messages', openaiHandler);
+
+// API route - handle hybrid nutrition lookup (new system)
+app.post('/api/nutrition/lookup', nutritionLookupHandler);
 
 // Proxy everything else to React dev server
 app.use('/', createProxyMiddleware({
