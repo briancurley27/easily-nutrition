@@ -232,14 +232,22 @@ async function lookupNutrition(item, usdaApiKey, openaiApiKey) {
  */
 async function lookupUSDA(item, apiKey) {
   const query = item.brand ? `${item.brand} ${item.name}` : item.name;
+  const hasBrand = !!item.brand;
 
   try {
     // Step 1: Search for the food
+    // For generic foods (no brand), exclude Branded data type to get standard reference data
     const params = new URLSearchParams({
       api_key: apiKey,
       query: query,
-      pageSize: '5',
+      pageSize: '10', // Get more results for better matching
     });
+
+    // Filter to non-branded data types when no brand is specified
+    // Priority: Survey (FNDDS) > SR Legacy > Foundation (best for generic foods)
+    if (!hasBrand) {
+      params.append('dataType', 'Survey (FNDDS),SR Legacy,Foundation');
+    }
 
     const searchResponse = await fetch(`${USDA_API_BASE}/foods/search?${params}`);
 
@@ -255,18 +263,11 @@ async function lookupUSDA(item, apiKey) {
       return null;
     }
 
-    // Find best match - prefer "raw" versions for generic foods
-    let food = searchData.foods[0];
-    const betterMatch = searchData.foods.find(f => {
-      const desc = f.description.toLowerCase();
-      return desc.includes('raw') || desc.includes(query.toLowerCase() + ',');
-    });
-    if (betterMatch) {
-      food = betterMatch;
-    }
+    // Find the best match using smart matching logic
+    const food = findBestFoodMatch(searchData.foods, item);
 
-    console.log(`[USDA] Search matched: "${food.description}" (FDC ID: ${food.fdcId})`);
-    console.log(`[USDA] All results:`, searchData.foods.map(f => `${f.description}`).slice(0, 5));
+    console.log(`[USDA] Search matched: "${food.description}" (FDC ID: ${food.fdcId}, Type: ${food.dataType})`);
+    console.log(`[USDA] All results:`, searchData.foods.slice(0, 5).map(f => `${f.description} (${food.dataType})`));
 
     // Step 2: Get detailed food data with portions
     const detailResponse = await fetch(`${USDA_API_BASE}/food/${food.fdcId}?api_key=${apiKey}`);
@@ -322,6 +323,77 @@ async function lookupUSDA(item, apiKey) {
     console.error('[USDA] Lookup error:', error);
     return null;
   }
+}
+
+/**
+ * Find the best food match from USDA search results
+ * Prioritizes: raw over cooked, simple over complex, matches description
+ */
+function findBestFoodMatch(foods, item) {
+  if (!foods || foods.length === 0) return null;
+  if (foods.length === 1) return foods[0];
+
+  const queryLower = item.name.toLowerCase().trim();
+
+  // Words that indicate a processed/cooked version (avoid for generic queries)
+  const cookedIndicators = ['baked', 'cooked', 'fried', 'roasted', 'grilled', 'steamed', 'boiled', 'sauteed', 'braised'];
+
+  // Score each food item
+  const scored = foods.map(food => {
+    const desc = food.description.toLowerCase();
+    let score = 0;
+
+    // Exact match or starts with query is best
+    if (desc === queryLower || desc.startsWith(queryLower + ',') || desc.startsWith(queryLower + ' ')) {
+      score += 100;
+    }
+
+    // Contains "raw" is good for produce/meat
+    if (desc.includes('raw')) {
+      score += 50;
+    }
+
+    // Penalize cooked/processed versions (unless user specified)
+    const userSpecifiedCooked = cookedIndicators.some(c => queryLower.includes(c));
+    if (!userSpecifiedCooked) {
+      cookedIndicators.forEach(indicator => {
+        if (desc.includes(indicator)) {
+          score -= 30;
+        }
+      });
+    }
+
+    // Prefer Survey (FNDDS) for common foods - has good portion data
+    if (food.dataType === 'Survey (FNDDS)') {
+      score += 20;
+    }
+
+    // Prefer SR Legacy for comprehensive data
+    if (food.dataType === 'SR Legacy') {
+      score += 15;
+    }
+
+    // Penalize very long descriptions (usually too specific)
+    if (desc.length > 50) {
+      score -= 10;
+    }
+
+    // Bonus if description contains the exact query word
+    if (desc.includes(queryLower)) {
+      score += 25;
+    }
+
+    return { food, score };
+  });
+
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+
+  console.log(`[USDA] Match scores:`, scored.slice(0, 5).map(s =>
+    `${s.food.description.substring(0, 40)}... (${s.score})`
+  ));
+
+  return scored[0].food;
 }
 
 /**
