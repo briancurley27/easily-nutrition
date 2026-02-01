@@ -398,14 +398,35 @@ function ResultCard({ title, result, loading, color }) {
             </thead>
             <tbody>
               {result.items?.map((item, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '8px' }}>{item.item || item.name}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{item.calories}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{item.protein}g</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{item.carbs}g</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{item.fat}g</td>
-                  <td style={{ padding: '8px', fontSize: '12px', color: '#666' }}>{item.source}</td>
-                </tr>
+                <React.Fragment key={i}>
+                  <tr style={{ borderBottom: item.debug ? 'none' : '1px solid #eee' }}>
+                    <td style={{ padding: '8px' }}>{item.item || item.name}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.calories}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.protein}g</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.carbs}g</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.fat}g</td>
+                    <td style={{ padding: '8px', fontSize: '12px', color: '#666' }}>{item.source}</td>
+                  </tr>
+                  {/* Debug info row for USDA items */}
+                  {(item.matchedName || item.fdcId || item.debug) && (
+                    <tr style={{ borderBottom: '1px solid #eee', background: '#f9f9f9' }}>
+                      <td colSpan={6} style={{ padding: '4px 8px', fontSize: '11px', color: '#888' }}>
+                        {item.matchedName && (
+                          <span>USDA Match: <strong>{item.matchedName}</strong></span>
+                        )}
+                        {item.fdcId && (
+                          <span> | <a href={`https://fdc.nal.usda.gov/food-details/${item.fdcId}/nutrients`} target="_blank" rel="noreferrer">FDC #{item.fdcId}</a></span>
+                        )}
+                        {item.debug?.per100g && (
+                          <span> | Per 100g: {item.debug.per100g.calories}cal, {item.debug.per100g.protein?.toFixed(1)}p, {item.debug.per100g.carbs?.toFixed(1)}c, {item.debug.per100g.fat?.toFixed(1)}f</span>
+                        )}
+                        {item.gramsSource && (
+                          <span> | Scaling: {item.gramsSource}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

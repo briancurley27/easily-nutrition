@@ -253,14 +253,24 @@ async function lookupUSDA(item, apiKey) {
       return null;
     }
 
-    // Get best match
-    const food = data.foods[0];
+    // Get best match - prefer "raw" versions for generic foods
+    let food = data.foods[0];
+
+    // Try to find a better match (raw/plain version)
+    const betterMatch = data.foods.find(f => {
+      const desc = f.description.toLowerCase();
+      return desc.includes('raw') || desc.includes(query.toLowerCase() + ',');
+    });
+    if (betterMatch) {
+      food = betterMatch;
+    }
+
     const nutrients = food.foodNutrients || [];
 
-    // Extract nutrition (per 100g)
+    // Extract nutrition (per 100g) - log raw values for debugging
     const getNutrient = (id) => {
       const n = nutrients.find(n => n.nutrientId === id);
-      return Math.round(n?.value || 0);
+      return n?.value || 0;
     };
 
     const per100g = {
@@ -270,10 +280,18 @@ async function lookupUSDA(item, apiKey) {
       fat: getNutrient(1004),
     };
 
+    // Log detailed debug info
+    console.log(`[USDA] Query: "${query}"`);
+    console.log(`[USDA] Matched: "${food.description}" (FDC ID: ${food.fdcId})`);
+    console.log(`[USDA] Data type: ${food.dataType}`);
+    console.log(`[USDA] Per 100g: cal=${per100g.calories}, p=${per100g.protein}, c=${per100g.carbs}, f=${per100g.fat}`);
+    console.log(`[USDA] Serving size: ${food.servingSize} ${food.servingSizeUnit || 'g'}`);
+    console.log(`[USDA] All results:`, data.foods.map(f => f.description).slice(0, 5));
+
     // Scale to user's quantity
     const scaled = scaleToQuantity(per100g, item, food);
 
-    console.log(`[USDA] Match: "${food.description}" for "${item.name}"`);
+    console.log(`[USDA] Scaled (${item.quantity} ${item.unit}): cal=${scaled.calories}, p=${scaled.protein}, c=${scaled.carbs}, f=${scaled.fat}`);
 
     return {
       ...scaled,
@@ -281,6 +299,13 @@ async function lookupUSDA(item, apiKey) {
       sourceDetail: food.dataType,
       fdcId: food.fdcId,
       matchedName: food.description,
+      // Include debug info
+      debug: {
+        per100g,
+        servingSize: food.servingSize,
+        servingSizeUnit: food.servingSizeUnit,
+        scaledGrams: scaled.grams,
+      },
     };
   } catch (error) {
     console.error('[USDA] Lookup error:', error);
@@ -360,24 +385,54 @@ function scaleToQuantity(per100g, item, usdaFood) {
     'tsp': 5, 'teaspoon': 5,
   };
 
+  // Common food serving sizes in grams (for "piece" units)
+  const defaultServingSizes = {
+    'banana': 118,      // medium banana
+    'apple': 182,       // medium apple
+    'orange': 131,      // medium orange
+    'egg': 50,          // large egg
+    'eggs': 50,
+    'slice': 30,        // slice of bread
+  };
+
   const unit = (item.unit || 'piece').toLowerCase();
   let grams;
+  let gramsSource;
 
   if (unitGrams[unit]) {
     grams = unitGrams[unit] * item.quantity;
+    gramsSource = `unit conversion (${unit} = ${unitGrams[unit]}g)`;
   } else {
-    // For pieces/servings, use USDA serving size or estimate
-    const servingSize = usdaFood?.servingSize || 100;
-    grams = servingSize * item.quantity;
+    // For pieces/servings, check if we have a default serving size for this food
+    const foodLower = item.name.toLowerCase();
+    const defaultSize = Object.entries(defaultServingSizes).find(([food]) =>
+      foodLower.includes(food)
+    );
+
+    if (defaultSize) {
+      grams = defaultSize[1] * item.quantity;
+      gramsSource = `default serving size (${defaultSize[0]} = ${defaultSize[1]}g)`;
+    } else if (usdaFood?.servingSize && usdaFood.servingSize > 0) {
+      grams = usdaFood.servingSize * item.quantity;
+      gramsSource = `USDA serving size (${usdaFood.servingSize}g)`;
+    } else {
+      // Last resort: assume 100g per piece
+      grams = 100 * item.quantity;
+      gramsSource = 'default (100g per piece)';
+    }
   }
 
   const scale = grams / 100;
+
+  console.log(`[USDA Scale] ${item.quantity} ${item.unit} of "${item.name}" = ${grams}g (${gramsSource}), scale=${scale.toFixed(2)}`);
 
   return {
     calories: Math.round(per100g.calories * scale),
     protein: Math.round(per100g.protein * scale),
     carbs: Math.round(per100g.carbs * scale),
     fat: Math.round(per100g.fat * scale),
+    grams,
+    gramsSource,
   };
 }
 
