@@ -36,10 +36,29 @@ const RESTAURANT_KEYWORDS = [
 
 // Brand keywords
 const BRAND_KEYWORDS = [
-  'fairlife', 'chobani', 'fage', 'quest', 'rxbar', 'kind',
-  'cheerios', 'oreo', 'doritos', 'lay\'s', 'fritos',
-  'coca-cola', 'pepsi', 'gatorade', 'red bull', 'monster',
-  'halo top', 'beyond', 'impossible', 'silk', 'oatly',
+  // Dairy & Milk
+  'fairlife', 'chobani', 'fage', 'silk', 'oatly', 'almond breeze',
+  // Snacks & Cookies
+  'oreo', 'doritos', 'lay\'s', 'fritos', 'cheetos', 'pringles',
+  'kind', 'rxbar', 'quest', 'clif', 'larabar', 'nature valley',
+  'sweet loren', 'lenny & larry', 'chips ahoy', 'nutter butter',
+  'want want', 'pocky', 'pepperidge farm',
+  // Drinks
+  'coca-cola', 'pepsi', 'gatorade', 'red bull', 'monster', 'celsius',
+  'body armor', 'vitamin water', 'snapple', 'arizona',
+  // Ice cream & Frozen
+  'halo top', 'ben & jerry', 'haagen-dazs', 'talenti', 'breyers',
+  // Meat alternatives
+  'beyond', 'impossible', 'gardein', 'morningstar', 'boca',
+  // Cereal & Breakfast
+  'cheerios', 'frosted flakes', 'special k', 'kashi', 'nature\'s path',
+  // Sauces & Condiments
+  'sweet baby ray', 'heinz', 'frank\'s', 'sriracha', 'hidden valley',
+  // Store brands
+  'kirkland', 'great value', 'market pantry', 'simply balanced', 'good & gather',
+  '365', 'trader joe', 'whole foods',
+  // Protein & Supplements
+  'optimum nutrition', 'muscle milk', 'premier protein', 'core power',
 ];
 
 module.exports = async function handler(req, res) {
@@ -377,17 +396,20 @@ async function lookupNutrition(item, usdaApiKey, openaiApiKey) {
     return await lookupWithGPT(item, openaiApiKey, true);
   }
 
-  // Try USDA first for generic foods and brands
-  if (usdaApiKey) {
+  // Try USDA first for generic foods (not brands)
+  if (usdaApiKey && !isBrand) {
     const usdaResult = await lookupUSDA(item, usdaApiKey);
     if (usdaResult) {
       return usdaResult;
     }
+    // USDA failed or match quality too low - fall back to GPT
+    console.log(`[Lookup] USDA failed for generic food, using GPT: ${item.name}`);
+    return await lookupWithGPT(item, openaiApiKey, false);
   }
 
-  // Brand not in USDA → GPT with web search
+  // Brand items → GPT with web search (skip USDA entirely for brands)
   if (isBrand) {
-    console.log(`[Lookup] Brand not in USDA: ${item.brand} ${item.name}`);
+    console.log(`[Lookup] Brand item, using GPT web search: ${item.brand || ''} ${item.name}`);
     return await lookupWithGPT(item, openaiApiKey, true);
   }
 
@@ -432,14 +454,23 @@ async function lookupUSDA(item, apiKey) {
     console.log(`[USDA] Got ${searchData.foods.length} results for "${query}"`);
 
     // Find the best match using smart matching logic
-    const food = findBestFoodMatch(searchData.foods, item, hasBrand);
+    const matchResult = findBestFoodMatch(searchData.foods, item, hasBrand);
 
-    if (!food) {
+    if (!matchResult || !matchResult.food) {
       console.log(`[USDA] No suitable match found for: ${query}`);
       return null;
     }
 
-    console.log(`[USDA] Selected: "${food.description}" (FDC ID: ${food.fdcId}, Type: ${food.dataType})`);
+    const { food, score } = matchResult;
+
+    // Quality threshold: reject poor matches and let GPT handle them
+    const MIN_MATCH_SCORE = 50;
+    if (score < MIN_MATCH_SCORE) {
+      console.log(`[USDA] Match score too low (${score} < ${MIN_MATCH_SCORE}) for: ${query} -> "${food.description}"`);
+      return null;
+    }
+
+    console.log(`[USDA] Selected: "${food.description}" (FDC ID: ${food.fdcId}, Type: ${food.dataType}, Score: ${score})`);
     console.log(`[USDA] Top 5 results:`, searchData.foods.slice(0, 5).map(f => `${f.description} [${f.dataType}]`));
 
     // Step 2: Get detailed food data with portions
@@ -504,7 +535,8 @@ async function lookupUSDA(item, apiKey) {
  */
 function findBestFoodMatch(foods, item, hasBrand = false) {
   if (!foods || foods.length === 0) return null;
-  if (foods.length === 1) return foods[0];
+  // Still need to score even single results to check quality
+  // (don't return early - let it go through scoring)
 
   const queryLower = item.name.toLowerCase().trim();
   const queryWords = queryLower.split(/\s+/);
@@ -640,7 +672,8 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
     `"${s.food.description.substring(0, 35)}" [${s.food.dataType}] = ${s.score}${s.penalizedForBranded ? ' (branded penalty)' : ''}`
   ));
 
-  return scored[0].food;
+  // Return both the food and the score so we can check quality
+  return { food: scored[0].food, score: scored[0].score };
 }
 
 /**
