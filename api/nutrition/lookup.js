@@ -75,18 +75,21 @@ module.exports = async function handler(req, res) {
 
     console.log(`[Nutrition API] Processing: "${input.substring(0, 100)}..."`);
 
-    // Step 1: Parse input with GPT
+    // Step 1: Parse input (local first, GPT fallback)
     const parseStart = performance.now();
-    const parsedItems = await parseWithGPT(input, OPENAI_API_KEY);
+    const parseResult = await parseInput(input, OPENAI_API_KEY);
+    const parsedItems = parseResult.items;
+    const parseMethod = parseResult.method;
     const parseTime = (performance.now() - parseStart) / 1000;
 
-    console.log(`[Nutrition API] Parsed ${parsedItems.length} items in ${parseTime.toFixed(2)}s`);
+    console.log(`[Nutrition API] Parsed ${parsedItems.length} items in ${parseTime.toFixed(2)}s (method: ${parseMethod})`);
 
     if (parsedItems.length === 0) {
       return res.status(200).json({
         items: [],
         timing: { parse: parseTime, lookup: 0, total: parseTime },
         sources: {},
+        parseMethod,
         message: 'No food items found in input',
       });
     }
@@ -125,6 +128,7 @@ module.exports = async function handler(req, res) {
         total: totalTime,
       },
       sources,
+      parseMethod,
     });
   } catch (error) {
     console.error('[Nutrition API] Error:', error);
@@ -136,7 +140,173 @@ module.exports = async function handler(req, res) {
 }
 
 /**
- * Parse natural language input with GPT (lean prompt)
+ * Parse input - try local parsing first, fall back to GPT for complex inputs
+ * Returns { items, method } where method is 'local' or 'gpt'
+ */
+async function parseInput(input, apiKey) {
+  // Try local parsing first (instant)
+  const localResult = parseLocally(input);
+
+  if (localResult.success && localResult.items.length > 0) {
+    console.log(`[Parse] Local parsing succeeded: ${localResult.items.length} items`);
+    return { items: localResult.items, method: 'local' };
+  }
+
+  // Fall back to GPT for complex inputs
+  console.log(`[Parse] Local parsing failed (${localResult.reason}), using GPT`);
+  const gptItems = await parseWithGPT(input, apiKey);
+  return { items: gptItems, method: 'gpt', fallbackReason: localResult.reason };
+}
+
+/**
+ * Local parser for simple food inputs (instant, no API call)
+ * Handles patterns like: "a banana", "2 eggs", "12 grapes", "banana, apple, orange"
+ */
+function parseLocally(input) {
+  if (!input || typeof input !== 'string') {
+    return { success: false, reason: 'empty input', items: [] };
+  }
+
+  const cleanInput = input.trim().toLowerCase();
+
+  // Check if input contains restaurant/brand keywords that need GPT
+  const needsContext = [...RESTAURANT_KEYWORDS, ...BRAND_KEYWORDS].some(k =>
+    cleanInput.includes(k.toLowerCase())
+  );
+  if (needsContext) {
+    return { success: false, reason: 'contains restaurant/brand keywords', items: [] };
+  }
+
+  // Check for complex language that needs GPT interpretation
+  const complexPatterns = [
+    /what i (had|ate|ordered)/i,
+    /the (same|usual|thing)/i,
+    /like (yesterday|last|before)/i,
+    /about|around|approximately|roughly/i,
+    /\?/,  // Questions
+  ];
+  if (complexPatterns.some(p => p.test(cleanInput))) {
+    return { success: false, reason: 'complex language detected', items: [] };
+  }
+
+  // Split input by common delimiters: "and", commas, newlines
+  const segments = cleanInput
+    .split(/\s*(?:,|\band\b|\n)+\s*/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  if (segments.length === 0) {
+    return { success: false, reason: 'no segments found', items: [] };
+  }
+
+  const items = [];
+
+  for (const segment of segments) {
+    const parsed = parseSegment(segment);
+    if (parsed) {
+      items.push(parsed);
+    } else {
+      // If we can't parse any segment, fall back to GPT
+      return { success: false, reason: `could not parse: "${segment}"`, items: [] };
+    }
+  }
+
+  return { success: true, reason: null, items };
+}
+
+/**
+ * Parse a single food segment like "a banana", "2 eggs", "12 grapes"
+ */
+function parseSegment(segment) {
+  // Patterns to match quantity and food
+  // "a banana" -> quantity: 1, name: "banana"
+  // "an apple" -> quantity: 1, name: "apple"
+  // "2 eggs" -> quantity: 2, name: "eggs"
+  // "12 grapes" -> quantity: 12, name: "grapes"
+  // "half a banana" -> quantity: 0.5, name: "banana"
+  // "1/2 cup rice" -> quantity: 0.5, unit: "cup", name: "rice"
+  // "white bread" -> quantity: 1, name: "white bread"
+  // "a slice of pizza" -> quantity: 1, unit: "slice", name: "pizza"
+
+  let quantity = 1;
+  let unit = 'piece';
+  let remaining = segment.trim();
+
+  // Handle fractions at the start: "1/2", "1/4", etc.
+  const fractionMatch = remaining.match(/^(\d+)\/(\d+)\s+(.+)$/);
+  if (fractionMatch) {
+    quantity = parseInt(fractionMatch[1]) / parseInt(fractionMatch[2]);
+    remaining = fractionMatch[3];
+  }
+
+  // Handle "half a/an" at the start
+  const halfMatch = remaining.match(/^half\s+(?:a|an)?\s*(.+)$/i);
+  if (halfMatch) {
+    quantity = 0.5;
+    remaining = halfMatch[1];
+  }
+
+  // Handle "a/an" at the start (quantity = 1)
+  const articleMatch = remaining.match(/^(?:a|an)\s+(.+)$/i);
+  if (articleMatch) {
+    quantity = 1;
+    remaining = articleMatch[1];
+  }
+
+  // Handle numeric quantity at the start: "2 eggs", "12 grapes"
+  const numMatch = remaining.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
+  if (numMatch) {
+    quantity = parseFloat(numMatch[1]);
+    remaining = numMatch[2];
+  }
+
+  // Handle units: "slice of", "cup of", "piece of", "serving of"
+  const unitPatterns = [
+    { pattern: /^(slice|slices)\s+(?:of\s+)?(.+)$/i, unit: 'slice' },
+    { pattern: /^(piece|pieces)\s+(?:of\s+)?(.+)$/i, unit: 'piece' },
+    { pattern: /^(cup|cups)\s+(?:of\s+)?(.+)$/i, unit: 'cup' },
+    { pattern: /^(tbsp|tablespoon|tablespoons)\s+(?:of\s+)?(.+)$/i, unit: 'tbsp' },
+    { pattern: /^(tsp|teaspoon|teaspoons)\s+(?:of\s+)?(.+)$/i, unit: 'tsp' },
+    { pattern: /^(oz|ounce|ounces)\s+(?:of\s+)?(.+)$/i, unit: 'oz' },
+    { pattern: /^(g|gram|grams)\s+(?:of\s+)?(.+)$/i, unit: 'g' },
+    { pattern: /^(serving|servings)\s+(?:of\s+)?(.+)$/i, unit: 'serving' },
+    { pattern: /^(bowl|bowls)\s+(?:of\s+)?(.+)$/i, unit: 'bowl' },
+    { pattern: /^(glass|glasses)\s+(?:of\s+)?(.+)$/i, unit: 'glass' },
+  ];
+
+  for (const { pattern, unit: unitName } of unitPatterns) {
+    const unitMatch = remaining.match(pattern);
+    if (unitMatch) {
+      unit = unitName;
+      remaining = unitMatch[2];
+      break;
+    }
+  }
+
+  // Clean up the food name
+  const name = remaining.trim();
+
+  // Validate: must have a non-empty name with at least one letter
+  if (!name || !/[a-z]/i.test(name)) {
+    return null;
+  }
+
+  // Reject if name is just a number or very short
+  if (name.length < 2) {
+    return null;
+  }
+
+  return {
+    name,
+    quantity,
+    unit,
+    brand: null,
+    restaurant: null,
+  };
+}
+
+/**
+ * Parse natural language input with GPT (fallback for complex inputs)
  */
 async function parseWithGPT(input, apiKey) {
   const systemPrompt = `Extract food items from input. Return ONLY a JSON array:
@@ -155,8 +325,8 @@ Rules:
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-5-mini-2025-08-07',
-      max_completion_tokens: 800,
+      model: 'gpt-4o-mini',  // Use faster model for parsing
+      max_completion_tokens: 500,  // Reduce tokens - parsing doesn't need much
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Parse: "${input}"` },

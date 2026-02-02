@@ -126,6 +126,7 @@ Return ONLY a JSON array: [{"item":"food name","calories":N,"protein":N,"carbs":
         time,
         timing: data.timing,
         sources: data.sources,
+        parseMethod: data.parseMethod,
         error: data.error || null,
         source: 'Hybrid (GPT parse + USDA/GPT lookup)',
       };
@@ -210,7 +211,7 @@ Return ONLY a JSON array: [{"item":"food name","calories":N,"protein":N,"carbs":
 
         {/* Quick test buttons */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {['banana', 'Big Mac', 'Fairlife milk', '2 eggs and toast', 'Chipotle bowl'].map(test => (
+          {['banana', 'a banana, white bread, 12 grapes', 'Big Mac', 'Fairlife milk', '2 eggs and toast', 'Chipotle bowl'].map(test => (
             <button
               key={test}
               onClick={() => { setInput(test); runComparison(test); }}
@@ -360,7 +361,7 @@ function ResultCard({ title, result, loading, color }) {
 
       {result && !loading && (
         <>
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '15px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <Clock size={16} />
               <strong>{result.time?.toFixed(2)}s</strong>
@@ -368,6 +369,17 @@ function ResultCard({ title, result, loading, color }) {
             {result.timing && (
               <div style={{ fontSize: '12px', color: '#666' }}>
                 (Parse: {result.timing.parse?.toFixed(2)}s, Lookup: {result.timing.lookup?.toFixed(2)}s)
+              </div>
+            )}
+            {result.parseMethod && (
+              <div style={{
+                fontSize: '12px',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: result.parseMethod === 'local' ? '#d4edda' : '#fff3cd',
+                color: result.parseMethod === 'local' ? '#155724' : '#856404',
+              }}>
+                Parse: {result.parseMethod === 'local' ? '⚡ Local (instant)' : '🤖 GPT'}
               </div>
             )}
           </div>
