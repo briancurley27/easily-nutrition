@@ -99,15 +99,23 @@ async function parseAndMapWithGPT(input, apiKey) {
   const systemPrompt = `You are a nutrition assistant that parses food input and maps foods to USDA database names.
 
 IMPORTANT: Most foods are GENERIC and exist in USDA. Only set isGeneric=false for:
-- Specific BRAND names (Fairlife, Sweet Loren's, Kirkland, Sweet Baby Ray's, etc.)
+- Specific BRAND names (Fairlife, Sweet Loren's, Kirkland, Sweet Baby Ray's, Want Want, etc.)
 - Restaurant items (McDonald's, Chipotle, Starbucks, etc.)
+
+Common brands to recognize (isGeneric=false):
+- Fairlife, Chobani, Oatly (dairy/milk alternatives)
+- Sweet Loren's, Lenny & Larry's (cookies)
+- Kirkland, Great Value, Trader Joe's (store brands)
+- Sweet Baby Ray's, Heinz (sauces)
+- Want Want, Pocky (Asian snacks)
 
 These ARE generic (isGeneric=true) - they exist in USDA:
 - Soups (even "broccoli leek potato soup" → search "Soup, vegetable")
 - Crackers (wheat crackers, saltines, etc.)
 - Homemade items (homemade margarita → "Margarita")
 - Basic foods with descriptors (popcorn kernels popped → "Popcorn, air-popped")
-- Condiments (honey mustard → "Honey mustard dressing", BBQ sauce → "Barbecue sauce")
+- Condiments (honey mustard → "Honey mustard dressing")
+- Oils → "Oil, coconut" or "Oil, olive" (NOT null!)
 - Breaded chicken → "Chicken, breaded, fried"
 
 For each food item, return:
