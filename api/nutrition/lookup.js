@@ -337,26 +337,60 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
   if (foods.length === 1) return foods[0];
 
   const queryLower = item.name.toLowerCase().trim();
+  const queryWords = queryLower.split(/\s+/);
+
+  // Generate plural/singular variations
+  const queryVariations = [queryLower];
+  if (queryLower.endsWith('s')) {
+    queryVariations.push(queryLower.slice(0, -1)); // grapes -> grape
+  } else {
+    queryVariations.push(queryLower + 's'); // grape -> grapes
+  }
 
   // Words that indicate a processed/cooked version (avoid for generic queries)
   const cookedIndicators = ['baked', 'cooked', 'fried', 'roasted', 'grilled', 'steamed', 'boiled', 'sauteed', 'braised'];
 
   // Words that indicate it's a recipe/dish, not the base food (penalize heavily)
-  const recipeIndicators = ['sandwich', 'salad', 'soup', 'stew', 'casserole', 'pie', 'cake', 'with', 'and'];
+  const recipeIndicators = ['sandwich', 'salad', 'soup', 'stew', 'casserole', 'pie', 'cake', 'with', 'and', 'stuffed'];
+
+  // Words that suggest it's a derivative, not the main food (for produce)
+  const derivativeIndicators = ['juice', 'leaves', 'leaf', 'chips', 'dried', 'powder', 'nectar', 'jam', 'jelly', 'sauce', 'paste', 'oil'];
 
   // Score each food item (WITHOUT branded penalty first)
   const scored = foods.map(food => {
     const desc = food.description.toLowerCase();
+    const descWords = desc.split(/[\s,]+/);
     let score = 0;
 
-    // Exact match or starts with query is best
-    if (desc === queryLower || desc.startsWith(queryLower + ',') || desc.startsWith(queryLower + ' ')) {
+    // Check for exact/starts-with match using query variations (handles plural/singular)
+    const startsWithMatch = queryVariations.some(q =>
+      desc === q || desc.startsWith(q + ',') || desc.startsWith(q + ' ') || desc.startsWith(q + 's,') || desc.startsWith(q + 's ')
+    );
+    if (startsWithMatch) {
       score += 100;
+    }
+
+    // Check if ALL query words appear in description (handles word order: "white bread" matches "Bread, white")
+    const allWordsMatch = queryWords.every(word =>
+      descWords.some(dw => dw === word || dw === word + 's' || dw + 's' === word)
+    );
+    if (allWordsMatch && queryWords.length > 1) {
+      score += 80; // Good match even if word order differs
     }
 
     // Contains "raw" is good for produce/meat
     if (desc.includes('raw')) {
       score += 50;
+    }
+
+    // Penalize derivatives (juice, leaves, chips) unless user specified
+    const userSpecifiedDerivative = derivativeIndicators.some(d => queryLower.includes(d));
+    if (!userSpecifiedDerivative) {
+      derivativeIndicators.forEach(indicator => {
+        if (desc.includes(indicator)) {
+          score -= 60; // Strong penalty - "grape juice" shouldn't match "grape"
+        }
+      });
     }
 
     // Penalize cooked/processed versions (unless user specified)
@@ -396,8 +430,8 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
       score -= 15;
     }
 
-    // Bonus if description contains the exact query word
-    if (desc.includes(queryLower)) {
+    // Bonus if description contains the exact query word (or variation)
+    if (queryVariations.some(q => desc.includes(q))) {
       score += 25;
     }
 
