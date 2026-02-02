@@ -201,11 +201,11 @@ async function lookupUSDA(item, apiKey) {
 
   try {
     // Search USDA with GPT's suggested term
+    // Note: dataType filter with comma-separated values causes 400 errors, so we skip it
     const params = new URLSearchParams({
       api_key: apiKey,
       query: query,
       pageSize: '10',
-      dataType: 'Survey (FNDDS),SR Legacy,Foundation', // Prefer non-branded
     });
 
     const searchResponse = await fetch(`${USDA_API_BASE}/foods/search?${params}`);
@@ -266,47 +266,83 @@ async function lookupUSDA(item, apiKey) {
 
 /**
  * Find a portion that matches what GPT suggested
+ * Uses scoring to find the best match, not first match
  */
 function findPortion(portions, item) {
   if (!portions || portions.length === 0) return null;
 
   const suggestedPortion = (item.usdaPortion || '').toLowerCase();
+  const foodName = (item.name || '').toLowerCase();
   const unit = (item.unit || 'piece').toLowerCase();
 
-  // Try to find exact match first
-  for (const p of portions) {
+  // Score each portion
+  const scored = portions.map(p => {
     const desc = (p.portionDescription || p.modifier || '').toLowerCase();
-    if (desc.includes(suggestedPortion) || suggestedPortion.includes(desc)) {
-      console.log(`[USDA] Portion match: "${desc}" for "${suggestedPortion}"`);
-      return p;
+    let score = 0;
+
+    // Exact match with GPT's suggestion is best
+    if (desc === suggestedPortion) {
+      score += 200;
+    } else if (desc.includes(suggestedPortion) && suggestedPortion.length > 3) {
+      score += 100;
     }
-  }
 
-  // Try to find by unit type
-  const unitMappings = {
-    'cup': ['cup'],
-    'slice': ['slice'],
-    'piece': ['whole', 'medium', '1 '],
-    'tbsp': ['tablespoon', 'tbsp'],
-    'tsp': ['teaspoon', 'tsp'],
-  };
-
-  const matches = unitMappings[unit] || [unit];
-  for (const p of portions) {
-    const desc = (p.portionDescription || p.modifier || '').toLowerCase();
-    if (matches.some(m => desc.includes(m))) {
-      console.log(`[USDA] Unit match: "${desc}" for unit "${unit}"`);
-      return p;
+    // Match food name in portion (e.g., "1 banana" for banana)
+    if (desc.includes(foodName) || desc.includes(foodName.replace(/s$/, ''))) {
+      score += 150;
     }
-  }
 
-  // Fall back to "quantity not specified" or first reasonable portion
-  const defaultPortion = portions.find(p => {
-    const desc = (p.portionDescription || '').toLowerCase();
-    return desc.includes('quantity not specified') || desc.includes('medium');
+    // "medium" or "regular" is preferred for unspecified sizes
+    if (desc.includes('medium') || desc.includes('regular')) {
+      score += 80;
+    }
+
+    // Match unit type
+    if (unit === 'slice' && desc.includes('slice')) {
+      // Prefer regular slice over snack-size or thin
+      if (!desc.includes('snack') && !desc.includes('thin') && !desc.includes('small')) {
+        score += 70;
+      } else {
+        score += 30;
+      }
+    }
+    if (unit === 'cup' && desc.includes('cup') && !desc.includes('mashed')) {
+      score += 70;
+    }
+    if (unit === 'tbsp' && (desc.includes('tablespoon') || desc.includes('tbsp'))) {
+      score += 70;
+    }
+
+    // "quantity not specified" is a decent fallback
+    if (desc.includes('quantity not specified')) {
+      score += 40;
+    }
+
+    // Penalize unusual portions
+    if (desc.includes('mashed') || desc.includes('pureed') || desc.includes('baby')) {
+      score -= 50;
+    }
+    if (desc.includes('snack') || desc.includes('mini') || desc.includes('thin')) {
+      score -= 30;
+    }
+
+    return { portion: p, score, desc };
   });
 
-  return defaultPortion || portions.find(p => p.gramWeight && p.gramWeight !== 100);
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+
+  console.log(`[USDA] Portion scores for "${suggestedPortion}":`, scored.slice(0, 4).map(s =>
+    `"${s.desc}" = ${s.score}`
+  ));
+
+  // Return best match if it has any positive score
+  if (scored[0] && scored[0].score > 0) {
+    return scored[0].portion;
+  }
+
+  // Fall back to first reasonable portion
+  return portions.find(p => p.gramWeight && p.gramWeight !== 100);
 }
 
 /**
