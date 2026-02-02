@@ -476,32 +476,57 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
 /**
  * Find the best USDA portion match for user's input
  * Prefers medium/regular/standard sizes when user doesn't specify small/large
+ * Handles singular/plural matching (grapes -> 1 grape)
  */
 function findBestPortion(portions, item) {
   if (!portions || portions.length === 0) return null;
 
   const unit = (item.unit || 'piece').toLowerCase();
   const foodName = item.name.toLowerCase();
+  const quantity = item.quantity || 1;
+
+  // Generate singular/plural variations of food name
+  let foodNameSingular = foodName;
+  let foodNamePlural = foodName;
+  if (foodName.endsWith('s')) {
+    foodNameSingular = foodName.slice(0, -1); // grapes -> grape
+  } else {
+    foodNamePlural = foodName + 's'; // grape -> grapes
+  }
 
   // Check if user specified a size
   const userSpecifiedSmall = /\b(small|thin|mini|snack)\b/i.test(item.name) || /\b(small|thin|mini|snack)\b/i.test(unit);
   const userSpecifiedLarge = /\b(large|big|thick|jumbo)\b/i.test(item.name) || /\b(large|big|thick|jumbo)\b/i.test(unit);
 
-  console.log(`[USDA Portion] Looking for: "${unit}" of "${foodName}" (small: ${userSpecifiedSmall}, large: ${userSpecifiedLarge})`);
+  console.log(`[USDA Portion] Looking for: ${quantity} "${unit}" of "${foodName}" (singular: ${foodNameSingular})`);
 
   // Score each portion
   const scored = portions.map(p => {
     const desc = (p.portionDescription || p.modifier || '').toLowerCase();
     let score = 0;
 
-    // Check if portion matches the food name (e.g., "1 banana" for banana)
-    if (desc.includes(`1 ${foodName}`) || desc.includes(foodName)) {
+    // Check if portion matches the food name (handle singular/plural)
+    // "1 grape" should match when foodName is "grapes"
+    // "1 banana" should match when foodName is "banana"
+    const matchesFoodName =
+      desc.includes(`1 ${foodNameSingular}`) ||
+      desc.includes(`1 ${foodNamePlural}`) ||
+      desc.includes(foodNameSingular) ||
+      desc.includes(foodNamePlural);
+
+    if (matchesFoodName) {
       score += 100;
+
+      // If user wants multiple items (e.g., 12 grapes) and this is a single-item portion,
+      // this is PERFECT - we'll multiply by quantity
+      if (quantity > 1 && (desc.includes(`1 ${foodNameSingular}`) || desc.includes(`1 ${foodNamePlural}`))) {
+        score += 50; // Bonus for individual item portion when quantity > 1
+      }
     }
 
     // Check if portion matches the unit type
     const unitMappings = {
-      'piece': ['quantity not specified', 'whole'],
+      'piece': ['whole'],
       'slice': ['slice'],
       'cup': ['cup'],
       'tbsp': ['tablespoon', 'tbsp'],
@@ -520,23 +545,27 @@ function findBestPortion(portions, item) {
     const isQuantityNotSpecified = desc.includes('quantity not specified');
 
     if (userSpecifiedSmall && isSmall) {
-      score += 80; // User wants small, this is small
+      score += 80;
     } else if (userSpecifiedLarge && isLarge) {
-      score += 80; // User wants large, this is large
+      score += 80;
     } else if (!userSpecifiedSmall && !userSpecifiedLarge) {
-      // User didn't specify size - prefer medium/regular/standard
       if (isMedium) {
-        score += 60; // Medium is best default
+        score += 60;
       } else if (isQuantityNotSpecified) {
-        score += 55; // "Quantity not specified" is typically standard
+        // "Quantity not specified" is only good if quantity is 1
+        // For "12 grapes", we want "1 grape" portion, not "quantity not specified"
+        if (quantity === 1) {
+          score += 55;
+        } else {
+          score += 10; // Much lower score when quantity > 1
+        }
       } else if (isSmall) {
-        score -= 20; // Penalize small when not requested
+        score -= 20;
       } else if (isLarge) {
-        score -= 10; // Slight penalty for large when not requested
+        score -= 10;
       }
     }
 
-    // Penalize if user specified size but portion doesn't match
     if (userSpecifiedSmall && !isSmall) {
       score -= 30;
     }
@@ -544,7 +573,7 @@ function findBestPortion(portions, item) {
       score -= 30;
     }
 
-    // Skip 100g (base unit, not a real portion)
+    // Skip 100g base unit
     if (p.gramWeight === 100 && !desc.includes('100')) {
       score -= 50;
     }
@@ -559,7 +588,7 @@ function findBestPortion(portions, item) {
     `"${s.desc.substring(0, 30)}" (${s.portion.gramWeight}g) = ${s.score}`
   ));
 
-  // Return the best match, or null if no good match
+  // Return the best match
   const best = scored[0];
   if (best && best.score > 0) {
     return best.portion;
