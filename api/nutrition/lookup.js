@@ -96,37 +96,42 @@ module.exports = async function handler(req, res) {
  * This is the key innovation - GPT knows USDA naming conventions
  */
 async function parseAndMapWithGPT(input, apiKey) {
-  const systemPrompt = `You are a nutrition assistant that parses food input and maps generic foods to USDA database names.
+  const systemPrompt = `You are a nutrition assistant that parses food input and maps foods to USDA database names.
+
+IMPORTANT: Most foods are GENERIC and exist in USDA. Only set isGeneric=false for:
+- Specific BRAND names (Fairlife, Sweet Loren's, Kirkland, Sweet Baby Ray's, etc.)
+- Restaurant items (McDonald's, Chipotle, Starbucks, etc.)
+
+These ARE generic (isGeneric=true) - they exist in USDA:
+- Soups (even "broccoli leek potato soup" → search "Soup, vegetable")
+- Crackers (wheat crackers, saltines, etc.)
+- Homemade items (homemade margarita → "Margarita")
+- Basic foods with descriptors (popcorn kernels popped → "Popcorn, air-popped")
+- Condiments (honey mustard → "Honey mustard dressing", BBQ sauce → "Barbecue sauce")
+- Breaded chicken → "Chicken, breaded, fried"
 
 For each food item, return:
-- name: The user-friendly display name
+- name: Display name (INCLUDE brand if applicable: "Fairlife Low Fat Milk" not just "Low Fat Milk")
 - quantity: Number (default 1)
 - unit: Serving unit (piece, cup, slice, tbsp, etc.)
-- usdaSearch: The EXACT USDA database search term (for generic foods only)
-- usdaPortion: The USDA portion description to look for
-- isGeneric: true if this is a generic food that exists in USDA, false for brands/restaurants
-- brand: Brand name if applicable (null otherwise)
-- restaurant: Restaurant name if applicable (null otherwise)
+- usdaSearch: USDA search term (for generic foods). Use USDA naming style:
+  - "Popcorn, air-popped" (NOT "popcorn kernels" which matches kernel oil)
+  - "Soup, vegetable" for vegetable soups
+  - "Crackers, wheat" for wheat crackers
+  - "Margarita" for margaritas
+  - "Chicken, breaded, cooked" for breaded chicken
+- usdaPortion: USDA portion to look for
+- isGeneric: true for most foods, false ONLY for specific brands/restaurants
+- brand: Brand name if it's a branded product (Fairlife, Sweet Loren's, Kirkland, etc.)
+- restaurant: Restaurant name if applicable
 
-USDA naming conventions:
-- "Banana, raw" not "banana"
-- "Bread, white" not "white bread"
-- "Grapes, raw" not "grapes"
-- "Egg, whole, raw" or "Egg, whole, cooked, scrambled"
-- "Chicken breast, cooked, grilled"
-- "Rice, white, cooked"
-
-USDA portion examples:
-- "1 medium" for banana
-- "1 slice" for bread
-- "1 grape" for grapes (we'll multiply by quantity)
-- "1 large" for eggs
-- "1 cup" for rice
-
-Return ONLY a JSON array. Example:
+Return ONLY a JSON array. Examples:
 [
   {"name":"banana","quantity":1,"unit":"piece","usdaSearch":"Banana, raw","usdaPortion":"1 medium","isGeneric":true,"brand":null,"restaurant":null},
-  {"name":"Fairlife milk","quantity":1,"unit":"cup","usdaSearch":null,"usdaPortion":null,"isGeneric":false,"brand":"Fairlife","restaurant":null},
+  {"name":"Fairlife Low Fat Milk","quantity":1,"unit":"cup","usdaSearch":null,"usdaPortion":null,"isGeneric":false,"brand":"Fairlife","restaurant":null},
+  {"name":"vegetable soup","quantity":1,"unit":"bowl","usdaSearch":"Soup, vegetable","usdaPortion":"1 cup","isGeneric":true,"brand":null,"restaurant":null},
+  {"name":"wheat crackers","quantity":6,"unit":"piece","usdaSearch":"Crackers, wheat","usdaPortion":"1 cracker","isGeneric":true,"brand":null,"restaurant":null},
+  {"name":"popcorn","quantity":6,"unit":"tbsp","usdaSearch":"Popcorn, air-popped","usdaPortion":"1 cup","isGeneric":true,"brand":null,"restaurant":null},
   {"name":"Big Mac","quantity":1,"unit":"piece","usdaSearch":null,"usdaPortion":null,"isGeneric":false,"brand":null,"restaurant":"McDonald's"}
 ]`;
 
