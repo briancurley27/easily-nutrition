@@ -325,6 +325,9 @@ function findPortion(portions, item) {
     if (desc.includes('snack') || desc.includes('mini') || desc.includes('thin')) {
       score -= 30;
     }
+    if (desc.includes('crust not eaten') || desc.includes('without crust')) {
+      score -= 40;  // "crust not eaten" is not a normal slice
+    }
 
     return { portion: p, score, desc };
   });
