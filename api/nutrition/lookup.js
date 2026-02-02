@@ -475,6 +475,7 @@ function findBestFoodMatch(foods, item, hasBrand = false) {
 
 /**
  * Find the best USDA portion match for user's input
+ * Prefers medium/regular/standard sizes when user doesn't specify small/large
  */
 function findBestPortion(portions, item) {
   if (!portions || portions.length === 0) return null;
@@ -482,38 +483,95 @@ function findBestPortion(portions, item) {
   const unit = (item.unit || 'piece').toLowerCase();
   const foodName = item.name.toLowerCase();
 
-  // First priority: look for a portion that matches the food name (e.g., "1 banana" for banana)
-  const foodNamePortion = portions.find(p => {
+  // Check if user specified a size
+  const userSpecifiedSmall = /\b(small|thin|mini|snack)\b/i.test(item.name) || /\b(small|thin|mini|snack)\b/i.test(unit);
+  const userSpecifiedLarge = /\b(large|big|thick|jumbo)\b/i.test(item.name) || /\b(large|big|thick|jumbo)\b/i.test(unit);
+
+  console.log(`[USDA Portion] Looking for: "${unit}" of "${foodName}" (small: ${userSpecifiedSmall}, large: ${userSpecifiedLarge})`);
+
+  // Score each portion
+  const scored = portions.map(p => {
     const desc = (p.portionDescription || p.modifier || '').toLowerCase();
-    return desc.includes(`1 ${foodName}`) || desc === foodName;
+    let score = 0;
+
+    // Check if portion matches the food name (e.g., "1 banana" for banana)
+    if (desc.includes(`1 ${foodName}`) || desc.includes(foodName)) {
+      score += 100;
+    }
+
+    // Check if portion matches the unit type
+    const unitMappings = {
+      'piece': ['quantity not specified', 'whole'],
+      'slice': ['slice'],
+      'cup': ['cup'],
+      'tbsp': ['tablespoon', 'tbsp'],
+      'tsp': ['teaspoon', 'tsp'],
+      'oz': ['ounce', 'oz'],
+    };
+    const unitMatches = unitMappings[unit] || [unit];
+    if (unitMatches.some(u => desc.includes(u))) {
+      score += 50;
+    }
+
+    // Handle size preferences
+    const isSmall = /\b(small|thin|mini|snack)\b/.test(desc);
+    const isLarge = /\b(large|big|thick|jumbo)\b/.test(desc);
+    const isMedium = /\b(medium|regular|standard)\b/.test(desc);
+    const isQuantityNotSpecified = desc.includes('quantity not specified');
+
+    if (userSpecifiedSmall && isSmall) {
+      score += 80; // User wants small, this is small
+    } else if (userSpecifiedLarge && isLarge) {
+      score += 80; // User wants large, this is large
+    } else if (!userSpecifiedSmall && !userSpecifiedLarge) {
+      // User didn't specify size - prefer medium/regular/standard
+      if (isMedium) {
+        score += 60; // Medium is best default
+      } else if (isQuantityNotSpecified) {
+        score += 55; // "Quantity not specified" is typically standard
+      } else if (isSmall) {
+        score -= 20; // Penalize small when not requested
+      } else if (isLarge) {
+        score -= 10; // Slight penalty for large when not requested
+      }
+    }
+
+    // Penalize if user specified size but portion doesn't match
+    if (userSpecifiedSmall && !isSmall) {
+      score -= 30;
+    }
+    if (userSpecifiedLarge && !isLarge) {
+      score -= 30;
+    }
+
+    // Skip 100g (base unit, not a real portion)
+    if (p.gramWeight === 100 && !desc.includes('100')) {
+      score -= 50;
+    }
+
+    return { portion: p, score, desc };
   });
-  if (foodNamePortion) return foodNamePortion;
 
-  // Second: match by unit type
-  const unitMappings = {
-    'piece': ['quantity not specified', '1 '],
-    'slice': ['slice'],
-    'cup': ['cup'],
-    'tbsp': ['tablespoon', 'tbsp'],
-    'tsp': ['teaspoon', 'tsp'],
-    'oz': ['ounce', 'oz'],
-  };
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
 
-  const unitMatches = unitMappings[unit] || [unit];
-  const unitPortion = portions.find(p => {
-    const desc = (p.portionDescription || p.modifier || '').toLowerCase();
-    return unitMatches.some(u => desc.includes(u));
-  });
-  if (unitPortion) return unitPortion;
+  console.log(`[USDA Portion] Scores:`, scored.slice(0, 5).map(s =>
+    `"${s.desc.substring(0, 30)}" (${s.portion.gramWeight}g) = ${s.score}`
+  ));
 
-  // Third: "quantity not specified" is often the default serving
+  // Return the best match, or null if no good match
+  const best = scored[0];
+  if (best && best.score > 0) {
+    return best.portion;
+  }
+
+  // Fallback: "quantity not specified" or first non-100g
   const defaultPortion = portions.find(p => {
     const desc = (p.portionDescription || p.modifier || '').toLowerCase();
     return desc.includes('quantity not specified');
   });
   if (defaultPortion) return defaultPortion;
 
-  // Last resort: first non-100g portion
   const nonBasePortion = portions.find(p => p.gramWeight && p.gramWeight !== 100);
   return nonBasePortion || null;
 }
