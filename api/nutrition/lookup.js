@@ -334,7 +334,10 @@ async function parseWithGPT(input, apiKey) {
 Rules:
 - Fix typos, use proper names
 - Default quantity=1, unit="piece"
-- Set brand/restaurant if mentioned
+- If brand mentioned, set brand field AND remove brand from name (no duplicates)
+  Example: "Fairlife milk" → {name:"milk", brand:"Fairlife"}
+- If restaurant mentioned, set restaurant field AND remove from name
+  Example: "Big Mac from McDonald's" → {name:"Big Mac", restaurant:"McDonald's"}
 - NO nutrition data, just parse`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -464,7 +467,8 @@ async function lookupUSDA(item, apiKey) {
     const { food, score } = matchResult;
 
     // Quality threshold: reject poor matches and let GPT handle them
-    const MIN_MATCH_SCORE = 50;
+    // Score of 100+ indicates good match (starts with query OR all words match + data type bonus)
+    const MIN_MATCH_SCORE = 100;
     if (score < MIN_MATCH_SCORE) {
       console.log(`[USDA] Match score too low (${score} < ${MIN_MATCH_SCORE}) for: ${query} -> "${food.description}"`);
       return null;
