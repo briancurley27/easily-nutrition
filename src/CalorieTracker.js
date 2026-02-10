@@ -650,7 +650,6 @@ const CalorieTracker = () => {
 
       // Build dynamic nutrition fields based on macro toggles
       const enabledMacros = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
-      const macroFields = enabledMacros.map(m => `"${m}"`).join(',');
       const macroFormatParts = enabledMacros.map(m => `"${m}":0`).join(',');
       const returnFields = `"item":"name","calories":100${macroFormatParts ? ',' + macroFormatParts : ''},"source":"source"`;
 
