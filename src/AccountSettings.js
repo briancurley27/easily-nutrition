@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut } from 'lucide-react';
+import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut, SlidersHorizontal } from 'lucide-react';
 import { supabase } from './supabase';
 
 const AccountSettings = ({
@@ -10,7 +10,9 @@ const AccountSettings = ({
   setGoals,
   entries,
   username,
-  setUsername
+  setUsername,
+  macroToggles,
+  setMacroToggles
 }) => {
   // Form states
   const [usernameInput, setUsernameInput] = useState('');
@@ -23,7 +25,7 @@ const AccountSettings = ({
   });
 
   // UI states
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState('tracking');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [usernameError, setUsernameError] = useState('');
@@ -36,19 +38,23 @@ const AccountSettings = ({
     const wasJustOpened = isOpen && !prevIsOpenRef.current;
     prevIsOpenRef.current = isOpen;
 
-    if (isOpen && session) {
-      setUsernameInput(username || '');
-      setEmailInput(session.user.email || '');
-      setGoalInputs({
-        calories: goals?.calories?.toString() || '',
-        protein: goals?.protein?.toString() || '',
-        carbs: goals?.carbs?.toString() || '',
-        fat: goals?.fat?.toString() || ''
-      });
+    if (isOpen) {
+      if (session) {
+        setUsernameInput(username || '');
+        setEmailInput(session.user.email || '');
+        setGoalInputs({
+          calories: goals?.calories?.toString() || '',
+          protein: goals?.protein?.toString() || '',
+          carbs: goals?.carbs?.toString() || '',
+          fat: goals?.fat?.toString() || ''
+        });
+      }
       // Only clear message when modal first opens, not when username/goals update
       if (wasJustOpened) {
         setMessage({ type: '', text: '' });
         setUsernameError('');
+        // Default to tracking tab, especially for anonymous users
+        if (!session) setActiveTab('tracking');
       }
     }
   }, [isOpen, session, username, goals]);
@@ -273,19 +279,21 @@ const AccountSettings = ({
 
   if (!isOpen) return null;
 
-  const tabs = [
-    { id: 'profile', label: 'Profile', icon: User },
-    { id: 'account', label: 'Account', icon: Mail },
-    { id: 'goals', label: 'Goals', icon: Target },
-    { id: 'data', label: 'Data', icon: Download }
+  const allTabs = [
+    { id: 'tracking', label: 'Tracking', icon: SlidersHorizontal, requiresAuth: false },
+    { id: 'goals', label: 'Goals', icon: Target, requiresAuth: true },
+    { id: 'profile', label: 'Profile', icon: User, requiresAuth: true },
+    { id: 'account', label: 'Account', icon: Mail, requiresAuth: true },
+    { id: 'data', label: 'Data', icon: Download, requiresAuth: true }
   ];
+  const tabs = allTabs.filter(tab => !tab.requiresAuth || session);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-end z-50">
       <div className="bg-white h-full w-full max-w-2xl shadow-xl overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-800">Account Settings</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{session ? 'Account Settings' : 'Settings'}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 transition"
@@ -331,6 +339,57 @@ const AccountSettings = ({
             }`}>
               {message.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}
               <span>{message.text}</span>
+            </div>
+          )}
+
+          {/* Tracking Tab */}
+          {activeTab === 'tracking' && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Macronutrient Tracking</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Choose which macronutrients to track. Calories are always tracked. Disabling macros reduces AI processing time and token usage.
+              </p>
+              <div className="space-y-4">
+                {[
+                  { key: 'protein', label: 'Protein', description: 'Track protein intake in grams' },
+                  { key: 'carbs', label: 'Carbs', description: 'Track carbohydrate intake in grams' },
+                  { key: 'fat', label: 'Fat', description: 'Track fat intake in grams' }
+                ].map(macro => (
+                  <div key={macro.key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-800">{macro.label}</p>
+                      <p className="text-sm text-gray-500">{macro.description}</p>
+                    </div>
+                    <button
+                      onClick={() => setMacroToggles(prev => ({ ...prev, [macro.key]: !prev[macro.key] }))}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        macroToggles[macro.key] ? 'bg-purple-600' : 'bg-gray-300'
+                      }`}
+                      role="switch"
+                      aria-checked={macroToggles[macro.key]}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          macroToggles[macro.key] ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-purple-800">
+                  <strong>Currently tracking:</strong>{' '}
+                  {(() => {
+                    const enabled = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
+                    if (enabled.length === 0) return 'Calories only';
+                    return 'Calories + ' + enabled.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ');
+                  })()}
+                </p>
+                <p className="text-xs text-purple-600 mt-1">
+                  Existing entries retain all their stored data regardless of these settings.
+                </p>
+              </div>
             </div>
           )}
 
@@ -452,6 +511,7 @@ const AccountSettings = ({
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Daily Goals</h3>
               <p className="text-sm text-gray-600 mb-6">
                 Set your daily nutrition targets. Leave blank for any goal you don't want to track.
+                {!Object.values(macroToggles).some(v => v) && ' Enable macronutrient tracking in the Tracking tab to set macro goals.'}
               </p>
               <form onSubmit={handleGoalsUpdate} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -468,6 +528,7 @@ const AccountSettings = ({
                       min="0"
                     />
                   </div>
+                  {macroToggles.protein && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Protein (g)
@@ -482,6 +543,8 @@ const AccountSettings = ({
                       step="0.1"
                     />
                   </div>
+                  )}
+                  {macroToggles.carbs && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Carbs (g)
@@ -496,6 +559,8 @@ const AccountSettings = ({
                       step="0.1"
                     />
                   </div>
+                  )}
+                  {macroToggles.fat && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Fat (g)
@@ -510,6 +575,7 @@ const AccountSettings = ({
                       step="0.1"
                     />
                   </div>
+                  )}
                 </div>
                 <button
                   type="submit"

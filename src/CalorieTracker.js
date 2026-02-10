@@ -262,6 +262,15 @@ const CalorieTracker = () => {
   const [username, setUsername] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
+  // Macro tracking toggle (persisted in localStorage)
+  const [macroToggles, setMacroToggles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('easily-macro-toggles');
+      if (saved) return JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+    return { protein: false, carbs: false, fat: false }; // Default: calories only
+  });
+
   // Chat and confirmation states
   const [messages, setMessages] = useState([]); // Conversation history
   const [pendingFoods, setPendingFoods] = useState(null); // {items: [], selectionState: {0: true, 1: true, ...}}
@@ -300,6 +309,11 @@ const CalorieTracker = () => {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  // Persist macro toggles to localStorage
+  useEffect(() => {
+    localStorage.setItem('easily-macro-toggles', JSON.stringify(macroToggles));
+  }, [macroToggles]);
 
   // Capture anonymous entries when user logs in
   useEffect(() => {
@@ -634,6 +648,28 @@ const CalorieTracker = () => {
         ? `\n\nUSER'S SAVED CORRECTIONS (use these exact values if the food matches - match case-insensitively):\n${JSON.stringify(relevantCorrections, null, 2)}`
         : '';
 
+      // Build dynamic nutrition fields based on macro toggles
+      const enabledMacros = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
+      const macroFields = enabledMacros.map(m => `"${m}"`).join(',');
+      const macroFormatParts = enabledMacros.map(m => `"${m}":0`).join(',');
+      const returnFields = `"item":"name","calories":100${macroFormatParts ? ',' + macroFormatParts : ''},"source":"source"`;
+
+      // Build examples based on enabled macros
+      const buildExample = (item, cal, protein, carbs, fat, source) => {
+        let obj = `"item":"${item}","calories":${cal}`;
+        if (macroToggles.protein) obj += `,"protein":${protein}`;
+        if (macroToggles.carbs) obj += `,"carbs":${carbs}`;
+        if (macroToggles.fat) obj += `,"fat":${fat}`;
+        obj += `,"source":"${source}"`;
+        return `{${obj}}`;
+      };
+
+      const macroTrackingNote = enabledMacros.length === 0
+        ? '\n\nIMPORTANT: The user is only tracking calories. Do NOT include protein, carbs, or fat in your response.'
+        : enabledMacros.length < 3
+          ? `\n\nIMPORTANT: The user is only tracking calories and ${enabledMacros.join(', ')}. Only include those fields - do NOT include ${['protein', 'carbs', 'fat'].filter(m => !macroToggles[m]).join(' or ')}.`
+          : '';
+
       // Build messages array with conversation history
       const apiMessages = [
         {
@@ -665,14 +701,15 @@ FORMATTING RULES:
 2. Emoji: Use only if clearly representative (🍌 🍎 🍕 🍟 🥚). Skip for branded items
 3. Quantity: Put number BEFORE name ("2 Eggs" not "Eggs (2)")
 4. Portions: Add assumed portions for proteins ("Chicken Breast (6 oz)")
+${macroTrackingNote}
 
 Examples:
-"2 eggs" → {"item":"🥚 2 Eggs","calories":140,"protein":12,"carbs":2,"fat":10,"source":"USDA"}
-"glass of milk" → {"item":"🥛 Glass of Milk (8 oz, Whole)","calories":150,"protein":8,"carbs":12,"fat":8,"source":"USDA"} + suggestion about milk types
-"chicken breast" → {"item":"🍗 Chicken Breast (6 oz)","calories":280,"protein":53,"carbs":0,"fat":6,"source":"USDA"}
-"large fries from McDonald's" → {"item":"🍟 Large McDonald's French Fries","calories":490,"protein":6,"carbs":66,"fat":23,"source":"McDonald's nutrition"}
+"2 eggs" → ${buildExample('🥚 2 Eggs', 140, 12, 2, 10, 'USDA')}
+"glass of milk" → ${buildExample('🥛 Glass of Milk (8 oz, Whole)', 150, 8, 12, 8, 'USDA')} + suggestion about milk types
+"chicken breast" → ${buildExample('🍗 Chicken Breast (6 oz)', 280, 53, 0, 6, 'USDA')}
+"large fries from McDonald's" → ${buildExample("🍟 Large McDonald's French Fries", 490, 6, 66, 23, "McDonald's nutrition")}
 
-Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"source":"source"}]`
+Return format: [{${returnFields}}]`
         },
         // Add conversation history (limit to last 10 messages to manage token usage)
         ...conversationHistory.slice(-10),
@@ -1731,7 +1768,9 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              {Object.values(macroToggles).some(v => v) && (
+              <div className={`grid gap-3 ${Object.values(macroToggles).filter(v => v).length === 1 ? 'grid-cols-1' : Object.values(macroToggles).filter(v => v).length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {macroToggles.protein && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Protein (g)</label>
                   <input
@@ -1742,6 +1781,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
                   />
                 </div>
+                )}
+                {macroToggles.carbs && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Carbs (g)</label>
                   <input
@@ -1752,6 +1793,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
                   />
                 </div>
+                )}
+                {macroToggles.fat && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fat (g)</label>
                   <input
@@ -1759,10 +1802,12 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                     value={manualEntryInputs.fat}
                     onChange={(e) => setManualEntryInputs({...manualEntryInputs, fat: e.target.value})}
                     placeholder="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-2 focus:ring-purple-500 outline-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
                   />
                 </div>
+                )}
               </div>
+              )}
             </div>
             <div className="flex gap-3 mt-6">
               <button
@@ -1871,13 +1916,10 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             </p>
           </div>
           <div className="flex items-center gap-4">
-            {session ? (
-              <>
-                <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Account settings">
-                  <Settings size={20} /><span className="hidden sm:inline">Settings</span>
-                </button>
-              </>
-            ) : (
+            <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition" title="Settings">
+              <Settings size={20} /><span className="hidden sm:inline">Settings</span>
+            </button>
+            {!session && (
               <>
                 <button
                   onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
@@ -1919,10 +1961,11 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
             {/* Mobile Layout: Macros left, Calories right */}
             <div className="lg:hidden">
               <div className={`flex gap-4 items-center ${session && 'mb-4'}`}>
-                {/* Macros - Left Side */}
+                {/* Macros - Left Side (only show if any macros enabled) */}
+                {Object.values(macroToggles).some(v => v) && (
                 <div className="flex-1 flex justify-center">
                   <div className={goals ? 'space-y-2' : 'space-y-1'}>
-                  {['protein', 'carbs', 'fat'].map(macro => (
+                  {['protein', 'carbs', 'fat'].filter(macro => macroToggles[macro]).map(macro => (
                     <div key={macro}>
                       <div className="flex items-baseline gap-2">
                         <span className="text-xs text-gray-600 w-12 capitalize">{macro}</span>
@@ -1940,6 +1983,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   ))}
                   </div>
                 </div>
+                )}
 
                 {/* Calories - Right Side */}
                 <div className="flex-1 flex justify-center">
@@ -1976,9 +2020,10 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
 
             {/* Desktop Layout: Original side by side layout */}
             <div className="hidden lg:flex items-center justify-between gap-12">
-              {/* Macros */}
+              {/* Macros (only show if any macros enabled) */}
+              {Object.values(macroToggles).some(v => v) && (
               <div className="flex-1 space-y-4 w-full">
-                {['protein', 'carbs', 'fat'].map(macro => (
+                {['protein', 'carbs', 'fat'].filter(macro => macroToggles[macro]).map(macro => (
                   <div key={macro}>
                     <div className="flex items-baseline gap-4 mb-1">
                       <span className="text-sm text-gray-600 w-12 capitalize">{macro}</span>
@@ -1995,6 +2040,7 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                   </div>
                 ))}
               </div>
+              )}
 
               {/* Chart */}
               <div className="flex-1 w-full">
@@ -2081,9 +2127,15 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                       </div>
                       <div className="text-right">
                         <span className="font-semibold text-purple-600">{item.calories} cal</span>
+                        {Object.values(macroToggles).some(v => v) && (
                         <div className="text-xs text-gray-600">
-                          P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
+                          {[
+                            macroToggles.protein && `P: ${item.protein || 0}g`,
+                            macroToggles.carbs && `C: ${item.carbs || 0}g`,
+                            macroToggles.fat && `F: ${item.fat || 0}g`
+                          ].filter(Boolean).join(' • ')}
                         </div>
+                        )}
                       </div>
                     </label>
                   ))}
@@ -2243,8 +2295,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                             <div className="flex justify-between items-start mb-2">
                               <span className="text-gray-800 font-medium">{item.item}</span>
                             </div>
-                            <div className="grid grid-cols-4 gap-2 mb-2">
-                              {['calories', 'protein', 'carbs', 'fat'].map(field => (
+                            <div className={`grid gap-2 mb-2 ${(() => { const c = 1 + Object.values(macroToggles).filter(v => v).length; return c === 1 ? 'grid-cols-1' : c === 2 ? 'grid-cols-2' : c === 3 ? 'grid-cols-3' : 'grid-cols-4'; })()}`}>
+                              {['calories', 'protein', 'carbs', 'fat'].filter(field => field === 'calories' || macroToggles[field]).map(field => (
                                 <div key={field}>
                                   <label className="text-xs text-gray-600 block mb-1 capitalize">{field === 'calories' ? 'Calories' : `${field} (g)`}</label>
                                   <input type="number" value={nutritionEditValues[field]} onChange={(e) => setNutritionEditValues({...nutritionEditValues, [field]: e.target.value})} className="w-full px-2 py-1 border rounded text-sm" />
@@ -2286,11 +2338,13 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                               </div>
                             </div>
                             <div className="flex justify-between items-center text-sm text-gray-600">
+                              {Object.values(macroToggles).some(v => v) && (
                               <div className="flex gap-4">
-                                <span>P: {item.protein}g</span>
-                                <span>C: {item.carbs}g</span>
-                                <span>F: {item.fat}g</span>
+                                {macroToggles.protein && <span>P: {item.protein}g</span>}
+                                {macroToggles.carbs && <span>C: {item.carbs}g</span>}
+                                {macroToggles.fat && <span>F: {item.fat}g</span>}
                               </div>
+                              )}
                               <div className="relative" data-source-tooltip="true">
                                 <button
                                   type="button"
@@ -2341,11 +2395,13 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
                     <span className="text-gray-600 font-medium">Total</span>
                     <span className="text-lg font-bold text-purple-600">{entry.totalCalories} cal</span>
                   </div>
+                  {Object.values(macroToggles).some(v => v) && (
                   <div className="flex gap-4 text-sm">
-                    <span className="text-purple-600">P: {entry.totalProtein}g</span>
-                    <span className="text-purple-600">C: {entry.totalCarbs}g</span>
-                    <span className="text-purple-600">F: {entry.totalFat}g</span>
+                    {macroToggles.protein && <span className="text-purple-600">P: {entry.totalProtein}g</span>}
+                    {macroToggles.carbs && <span className="text-purple-600">C: {entry.totalCarbs}g</span>}
+                    {macroToggles.fat && <span className="text-purple-600">F: {entry.totalFat}g</span>}
                   </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -2372,11 +2428,13 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
               <span className="text-gray-800 font-medium">{dragPreview.item.item}</span>
               <span className="font-semibold text-purple-600 ml-2">{dragPreview.item.calories} cal</span>
             </div>
+            {Object.values(macroToggles).some(v => v) && (
             <div className="flex gap-3 text-sm text-gray-600">
-              <span>P: {dragPreview.item.protein}g</span>
-              <span>C: {dragPreview.item.carbs}g</span>
-              <span>F: {dragPreview.item.fat}g</span>
+              {macroToggles.protein && <span>P: {dragPreview.item.protein}g</span>}
+              {macroToggles.carbs && <span>C: {dragPreview.item.carbs}g</span>}
+              {macroToggles.fat && <span>F: {dragPreview.item.fat}g</span>}
             </div>
+            )}
           </div>
         </div>
       )}
@@ -2391,6 +2449,8 @@ Return format: [{"item":"name","calories":100,"protein":10,"carbs":20,"fat":5,"s
         entries={entries}
         username={username}
         setUsername={setUsername}
+        macroToggles={macroToggles}
+        setMacroToggles={setMacroToggles}
       />
     </div>
   );
