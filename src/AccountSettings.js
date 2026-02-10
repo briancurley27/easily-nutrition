@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut, SlidersHorizontal } from 'lucide-react';
+import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
 const AccountSettings = ({
@@ -25,7 +25,7 @@ const AccountSettings = ({
   });
 
   // UI states
-  const [activeTab, setActiveTab] = useState('tracking');
+  const [activeTab, setActiveTab] = useState('goals');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [usernameError, setUsernameError] = useState('');
@@ -53,8 +53,8 @@ const AccountSettings = ({
       if (wasJustOpened) {
         setMessage({ type: '', text: '' });
         setUsernameError('');
-        // Default to tracking tab, especially for anonymous users
-        if (!session) setActiveTab('tracking');
+        // Default to goals tab, especially for anonymous users
+        if (!session) setActiveTab('goals');
       }
     }
   }, [isOpen, session, username, goals]);
@@ -280,8 +280,7 @@ const AccountSettings = ({
   if (!isOpen) return null;
 
   const allTabs = [
-    { id: 'tracking', label: 'Tracking', icon: SlidersHorizontal, requiresAuth: false },
-    { id: 'goals', label: 'Goals', icon: Target, requiresAuth: true },
+    { id: 'goals', label: 'Goals', icon: Target, requiresAuth: false },
     { id: 'profile', label: 'Profile', icon: User, requiresAuth: true },
     { id: 'account', label: 'Account', icon: Mail, requiresAuth: true },
     { id: 'data', label: 'Data', icon: Download, requiresAuth: true }
@@ -339,57 +338,6 @@ const AccountSettings = ({
             }`}>
               {message.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}
               <span>{message.text}</span>
-            </div>
-          )}
-
-          {/* Tracking Tab */}
-          {activeTab === 'tracking' && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Macronutrient Tracking</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Choose which macronutrients to track. Calories are always tracked. Disabling macros reduces AI processing time and token usage.
-              </p>
-              <div className="space-y-4">
-                {[
-                  { key: 'protein', label: 'Protein', description: 'Track protein intake in grams' },
-                  { key: 'carbs', label: 'Carbs', description: 'Track carbohydrate intake in grams' },
-                  { key: 'fat', label: 'Fat', description: 'Track fat intake in grams' }
-                ].map(macro => (
-                  <div key={macro.key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-800">{macro.label}</p>
-                      <p className="text-sm text-gray-500">{macro.description}</p>
-                    </div>
-                    <button
-                      onClick={() => setMacroToggles(prev => ({ ...prev, [macro.key]: !prev[macro.key] }))}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        macroToggles[macro.key] ? 'bg-purple-600' : 'bg-gray-300'
-                      }`}
-                      role="switch"
-                      aria-checked={macroToggles[macro.key]}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          macroToggles[macro.key] ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-6 p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-purple-800">
-                  <strong>Currently tracking:</strong>{' '}
-                  {(() => {
-                    const enabled = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
-                    if (enabled.length === 0) return 'Calories only';
-                    return 'Calories + ' + enabled.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ');
-                  })()}
-                </p>
-                <p className="text-xs text-purple-600 mt-1">
-                  Existing entries retain all their stored data regardless of these settings.
-                </p>
-              </div>
             </div>
           )}
 
@@ -505,86 +453,111 @@ const AccountSettings = ({
             </div>
           )}
 
-          {/* Goals Tab */}
+          {/* Goals Tab (combined tracking + goals) */}
           {activeTab === 'goals' && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Daily Goals</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Set your daily nutrition targets. Leave blank for any goal you don't want to track.
-                {!Object.values(macroToggles).some(v => v) && ' Enable macronutrient tracking in the Tracking tab to set macro goals.'}
+              {/* Macronutrient Toggles Section */}
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Macronutrient Tracking</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Choose which macronutrients to track alongside calories. Disabling macros reduces AI response time.
               </p>
-              <form onSubmit={handleGoalsUpdate} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Calories
-                    </label>
-                    <input
-                      type="number"
-                      value={goalInputs.calories}
-                      onChange={(e) => setGoalInputs({ ...goalInputs, calories: e.target.value })}
-                      placeholder="e.g., 2000"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                      min="0"
-                    />
-                  </div>
-                  {macroToggles.protein && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Protein (g)
-                    </label>
-                    <input
-                      type="number"
-                      value={goalInputs.protein}
-                      onChange={(e) => setGoalInputs({ ...goalInputs, protein: e.target.value })}
-                      placeholder="e.g., 150"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                      min="0"
-                      step="0.1"
-                    />
-                  </div>
-                  )}
-                  {macroToggles.carbs && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Carbs (g)
-                    </label>
-                    <input
-                      type="number"
-                      value={goalInputs.carbs}
-                      onChange={(e) => setGoalInputs({ ...goalInputs, carbs: e.target.value })}
-                      placeholder="e.g., 200"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                      min="0"
-                      step="0.1"
-                    />
-                  </div>
-                  )}
-                  {macroToggles.fat && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Fat (g)
-                    </label>
-                    <input
-                      type="number"
-                      value={goalInputs.fat}
-                      onChange={(e) => setGoalInputs({ ...goalInputs, fat: e.target.value })}
-                      placeholder="e.g., 65"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                      min="0"
-                      step="0.1"
-                    />
-                  </div>
-                  )}
+
+              {/* Calories is always on */}
+              <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg mb-3">
+                <div>
+                  <p className="font-medium text-gray-800">Calories</p>
+                  <p className="text-sm text-gray-500">Always tracked</p>
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Updating...' : 'Update Goals'}
-                </button>
-              </form>
+                <div className="relative inline-flex h-6 w-11 items-center rounded-full bg-purple-600 cursor-not-allowed opacity-60">
+                  <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6" />
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                {[
+                  { key: 'protein', label: 'Protein' },
+                  { key: 'carbs', label: 'Carbs' },
+                  { key: 'fat', label: 'Fat' }
+                ].map(macro => (
+                  <div key={macro.key}>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-800">{macro.label}</p>
+                      </div>
+                      {/* Goal input inline when toggled on & authenticated */}
+                      {macroToggles[macro.key] && session && (
+                        <div className="flex items-center gap-2 mr-4">
+                          <label className="text-xs text-gray-500 whitespace-nowrap">Goal (g)</label>
+                          <input
+                            type="number"
+                            value={goalInputs[macro.key]}
+                            onChange={(e) => setGoalInputs({ ...goalInputs, [macro.key]: e.target.value })}
+                            placeholder="—"
+                            className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                            min="0"
+                            step="0.1"
+                          />
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setMacroToggles(prev => ({ ...prev, [macro.key]: !prev[macro.key] }))}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                          macroToggles[macro.key] ? 'bg-purple-600' : 'bg-gray-300'
+                        }`}
+                        role="switch"
+                        aria-checked={macroToggles[macro.key]}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            macroToggles[macro.key] ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Calorie Goal Section (authenticated users) */}
+              {session && (
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Daily Calorie Goal</h3>
+                  <form onSubmit={handleGoalsUpdate} className="space-y-4">
+                    <div>
+                      <input
+                        type="number"
+                        value={goalInputs.calories}
+                        onChange={(e) => setGoalInputs({ ...goalInputs, calories: e.target.value })}
+                        placeholder="e.g., 2000 calories"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        min="0"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Saving...' : 'Save Goals'}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* Info note */}
+              <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-purple-800">
+                  <strong>Currently tracking:</strong>{' '}
+                  {(() => {
+                    const enabled = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
+                    if (enabled.length === 0) return 'Calories only';
+                    return 'Calories + ' + enabled.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ');
+                  })()}
+                </p>
+                <p className="text-xs text-purple-600 mt-1">
+                  Existing entries retain all their stored data regardless of these settings.
+                </p>
+              </div>
             </div>
           )}
 
