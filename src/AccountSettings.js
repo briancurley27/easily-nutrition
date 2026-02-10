@@ -203,7 +203,7 @@ const AccountSettings = ({
         .upsert({
           user_id: session.user.id,
           ...newGoals
-        });
+        }, { onConflict: 'user_id' });
 
       if (error) throw error;
 
