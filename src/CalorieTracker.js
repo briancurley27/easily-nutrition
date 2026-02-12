@@ -262,7 +262,7 @@ const CalorieTracker = () => {
   const [username, setUsername] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Macro tracking toggle (persisted in localStorage)
+  // Macro tracking toggle (persisted in localStorage + Supabase user_metadata for authenticated users)
   const [macroToggles, setMacroToggles] = useState(() => {
     try {
       const saved = localStorage.getItem('easily-macro-toggles');
@@ -270,6 +270,9 @@ const CalorieTracker = () => {
     } catch (e) { /* ignore */ }
     return { protein: false, carbs: false, fat: false }; // Default: calories only
   });
+
+  // Track whether we've synced macro toggles from the server for this session
+  const macroTogglesSyncedRef = useRef(false);
 
   // Chat and confirmation states
   const [messages, setMessages] = useState([]); // Conversation history
@@ -310,10 +313,32 @@ const CalorieTracker = () => {
     sessionRef.current = session;
   }, [session]);
 
-  // Persist macro toggles to localStorage
+  // Persist macro toggles to localStorage + Supabase user_metadata
   useEffect(() => {
     localStorage.setItem('easily-macro-toggles', JSON.stringify(macroToggles));
-  }, [macroToggles]);
+
+    // Save to Supabase user metadata for cross-device sync (skip the initial load sync)
+    if (session?.user && macroTogglesSyncedRef.current) {
+      supabase.auth.updateUser({ data: { macroToggles } });
+    }
+  }, [macroToggles, session?.user]);
+
+  // Load macro toggles from Supabase user_metadata on login (overrides localStorage)
+  useEffect(() => {
+    if (session?.user?.user_metadata?.macroToggles && !macroTogglesSyncedRef.current) {
+      const saved = session.user.user_metadata.macroToggles;
+      if (typeof saved === 'object' && 'protein' in saved && 'carbs' in saved && 'fat' in saved) {
+        setMacroToggles(saved);
+        localStorage.setItem('easily-macro-toggles', JSON.stringify(saved));
+      }
+    }
+    if (session?.user) {
+      macroTogglesSyncedRef.current = true;
+    }
+    if (!session) {
+      macroTogglesSyncedRef.current = false;
+    }
+  }, [session]);
 
   // Capture anonymous entries when user logs in
   useEffect(() => {
