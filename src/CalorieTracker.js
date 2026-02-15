@@ -3,6 +3,7 @@ import { Send, Trash2, Edit2, X, ChevronLeft, ChevronRight, Eye, EyeOff, GripVer
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from './supabase';
 import AccountSettings from './AccountSettings';
+import WeightTracker from './WeightTracker';
 
 // Auth Modal Component - defined outside to prevent re-mounting on state changes
 const AuthModal = ({
@@ -261,6 +262,7 @@ const CalorieTracker = () => {
   // User profile states
   const [username, setUsername] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [activeView, setActiveView] = useState('food');
 
   // Macro tracking toggle (persisted in localStorage + Supabase user_metadata for authenticated users)
   const [macroToggles, setMacroToggles] = useState(() => {
@@ -1963,7 +1965,26 @@ Return format: [{${returnFields}}]`
         </div>
       </div>
 
+      {/* View Toggle */}
+      <div className="bg-white border-b border-gray-200 px-6">
+        <div className="max-w-4xl mx-auto flex">
+          <button
+            onClick={() => setActiveView('food')}
+            className={`flex-1 py-3 text-sm font-medium text-center border-b-2 transition ${activeView === 'food' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Food
+          </button>
+          <button
+            onClick={() => setActiveView('weight')}
+            className={`flex-1 py-3 text-sm font-medium text-center border-b-2 transition ${activeView === 'weight' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Weight
+          </button>
+        </div>
+      </div>
+
       {/* Date Navigation */}
+      {activeView === 'food' && (
       <div className="bg-white border-b border-gray-200 px-6">
         <div className="max-w-4xl mx-auto flex items-center justify-between py-3">
           <button onClick={() => changeDate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition"><ChevronLeft size={20} /></button>
@@ -1976,10 +1997,14 @@ Return format: [{${returnFields}}]`
           </button>
         </div>
       </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto">
+          {activeView === 'weight' ? (
+            <WeightTracker session={session} />
+          ) : (<>
           {/* Stats Card */}
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
             {/* Mobile Layout: Macros left, Calories right */}
@@ -2430,6 +2455,7 @@ Return format: [{${returnFields}}]`
               </div>
             ))}
           </div>
+          </>)}
         </div>
       </div>
 
