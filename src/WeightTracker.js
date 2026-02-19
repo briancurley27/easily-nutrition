@@ -91,11 +91,6 @@ const WeightTracker = ({ session }) => {
 
   // Load data
   const loadData = useCallback(async () => {
-    if (!session?.user) {
-      setIsLoading(false);
-      return;
-    }
-
     try {
       const [entriesResult, goalResult] = await Promise.all([
         supabase
@@ -129,8 +124,12 @@ const WeightTracker = ({ session }) => {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (session?.user) {
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [session, loadData]);
 
   // Log weight
   const logWeight = async () => {
