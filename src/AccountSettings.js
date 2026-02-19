@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Mail, Lock, Download, Target, Check, AlertCircle, LogOut } from 'lucide-react';
+import { X, User, Mail, Lock, Download, Upload, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
 const AccountSettings = ({
@@ -12,7 +12,8 @@ const AccountSettings = ({
   username,
   setUsername,
   macroToggles,
-  setMacroToggles
+  setMacroToggles,
+  onWeightDataImported
 }) => {
   // Form states
   const [usernameInput, setUsernameInput] = useState('');
@@ -274,6 +275,155 @@ const AccountSettings = ({
     } catch (error) {
       console.error('Error exporting CSV:', error);
       setMessage({ type: 'error', text: 'Failed to export data' });
+    }
+  };
+
+  // Handle weight CSV export
+  const handleExportWeightCSV = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('weight_entries')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('date', { ascending: true });
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setMessage({ type: 'error', text: 'No weight data to export' });
+        return;
+      }
+
+      const unit = localStorage.getItem('easily-weight-unit') || 'lbs';
+      const LBS_PER_KG = 2.20462;
+
+      const rows = [['Date', `Weight (${unit})`]];
+      data.forEach(entry => {
+        const weight = unit === 'kg'
+          ? (parseFloat(entry.weight_lbs) / LBS_PER_KG).toFixed(1)
+          : parseFloat(entry.weight_lbs).toFixed(1);
+        rows.push([entry.date, weight]);
+      });
+
+      const csvContent = rows.map(row => row.join(',')).join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `easily-weight-export-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setMessage({ type: 'success', text: `Exported ${data.length} weight entries!` });
+    } catch (error) {
+      console.error('Error exporting weight CSV:', error);
+      setMessage({ type: 'error', text: 'Failed to export weight data' });
+    }
+  };
+
+  // Handle weight CSV import
+  const handleImportWeightCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+
+      if (lines.length < 2) {
+        setMessage({ type: 'error', text: 'CSV must have a header row and at least one data row' });
+        return;
+      }
+
+      const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+      const dateCol = header.findIndex(h => h.includes('date'));
+      const weightCol = header.findIndex(h => h.includes('weight'));
+
+      if (dateCol === -1 || weightCol === -1) {
+        setMessage({ type: 'error', text: 'CSV must have "date" and "weight" columns' });
+        return;
+      }
+
+      const unitCol = header.findIndex(h => h.includes('unit'));
+      const displayUnit = localStorage.getItem('easily-weight-unit') || 'lbs';
+      const LBS_PER_KG = 2.20462;
+
+      const parsed = [];
+      const errors = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const weightVal = parseFloat(cols[weightCol]);
+
+        // Parse date - support YYYY-MM-DD, MM/DD/YYYY, MM-DD-YYYY
+        let dateStr = cols[dateCol]?.trim();
+        if (dateStr) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            // already YYYY-MM-DD
+          } else {
+            const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            const dashMatch = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            const match = slashMatch || dashMatch;
+            if (match) {
+              const [, m, d, y] = match;
+              dateStr = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            } else {
+              const fallback = new Date(dateStr);
+              if (!isNaN(fallback.getTime())) {
+                const y = fallback.getFullYear();
+                const m = String(fallback.getMonth() + 1).padStart(2, '0');
+                const d = String(fallback.getDate()).padStart(2, '0');
+                dateStr = `${y}-${m}-${d}`;
+              } else {
+                dateStr = null;
+              }
+            }
+          }
+        } else {
+          dateStr = null;
+        }
+
+        if (!dateStr) { errors.push(`Row ${i + 1}: Invalid date`); continue; }
+        if (isNaN(weightVal) || weightVal <= 0) { errors.push(`Row ${i + 1}: Invalid weight`); continue; }
+
+        let rowUnit = displayUnit;
+        if (unitCol !== -1 && cols[unitCol]) {
+          const u = cols[unitCol].toLowerCase().trim();
+          if (['kg', 'kgs', 'kilogram', 'kilograms'].includes(u)) rowUnit = 'kg';
+          else if (['lb', 'lbs', 'pound', 'pounds'].includes(u)) rowUnit = 'lbs';
+        }
+
+        const weightLbs = rowUnit === 'kg' ? weightVal * LBS_PER_KG : weightVal;
+        parsed.push({ date: dateStr, weight_lbs: weightLbs });
+      }
+
+      if (parsed.length === 0) {
+        setMessage({ type: 'error', text: `No valid entries found.${errors.length ? ' ' + errors.slice(0, 3).join('; ') : ''}` });
+        return;
+      }
+
+      const rows = parsed.map(e => ({
+        user_id: session.user.id,
+        date: e.date,
+        weight_lbs: e.weight_lbs
+      }));
+
+      const { error } = await supabase
+        .from('weight_entries')
+        .upsert(rows, { onConflict: 'user_id,date' });
+
+      if (error) throw error;
+
+      const errorSummary = errors.length > 0 ? ` (${errors.length} rows skipped)` : '';
+      setMessage({ type: 'success', text: `Imported ${parsed.length} weight entries${errorSummary}` });
+      if (onWeightDataImported) onWeightDataImported();
+    } catch (error) {
+      console.error('Error importing weight CSV:', error);
+      setMessage({ type: 'error', text: 'Failed to import weight data' });
     }
   };
 
@@ -563,25 +713,62 @@ const AccountSettings = ({
 
           {/* Data Tab */}
           {activeTab === 'data' && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Export Data</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Download all your nutrition data as a CSV file. The export includes all food entries with detailed nutrition information.
-              </p>
-              <button
-                onClick={handleExportCSV}
-                disabled={Object.keys(entries).length === 0}
-                className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Download size={18} />
-                {Object.keys(entries).length === 0 ? 'No Data to Export' : 'Export as CSV'}
-              </button>
-              {Object.keys(entries).length > 0 && (
-                <p className="text-sm text-gray-500 mt-3">
-                  Your export will include {Object.values(entries).flat().reduce((acc, entry) => acc + entry.items.length, 0)} food items
-                  across {Object.keys(entries).length} days.
+            <div className="space-y-8">
+              {/* Food Export */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Export Food Data</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Download all your nutrition data as a CSV file.
                 </p>
-              )}
+                <button
+                  onClick={handleExportCSV}
+                  disabled={Object.keys(entries).length === 0}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Download size={18} />
+                  {Object.keys(entries).length === 0 ? 'No Food Data to Export' : 'Export Food Data'}
+                </button>
+                {Object.keys(entries).length > 0 && (
+                  <p className="text-sm text-gray-500 mt-3">
+                    Your export will include {Object.values(entries).flat().reduce((acc, entry) => acc + entry.items.length, 0)} food items
+                    across {Object.keys(entries).length} days.
+                  </p>
+                )}
+              </div>
+
+              {/* Weight Export */}
+              <div className="border-t border-gray-200 pt-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Export Weight Data</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Download your weight history as a CSV file.
+                </p>
+                <button
+                  onClick={handleExportWeightCSV}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Download size={18} />
+                  Export Weight Data
+                </button>
+              </div>
+
+              {/* Weight Import */}
+              <div className="border-t border-gray-200 pt-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Import Weight Data</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Upload a CSV file with your weight history. The file should have "date" and "weight" columns.
+                  Optionally include a "unit" column (lbs/kg). Supported date formats: YYYY-MM-DD, MM/DD/YYYY, MM-DD-YYYY.
+                </p>
+                <label className="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-800 rounded-lg font-medium hover:bg-gray-200 transition cursor-pointer">
+                  <Upload size={18} />
+                  Upload Weight CSV
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleImportWeightCSV}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
           )}
         </div>
