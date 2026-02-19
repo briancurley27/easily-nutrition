@@ -263,6 +263,7 @@ const CalorieTracker = () => {
   const [username, setUsername] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [activeView, setActiveView] = useState('food');
+  const [weightRefreshKey, setWeightRefreshKey] = useState(0);
 
   // Macro tracking toggle (persisted in localStorage + Supabase user_metadata for authenticated users)
   const [macroToggles, setMacroToggles] = useState(() => {
@@ -2003,7 +2004,7 @@ Return format: [{${returnFields}}]`
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto">
           {activeView === 'weight' ? (
-            <WeightTracker session={session} />
+            <WeightTracker session={session} refreshKey={weightRefreshKey} />
           ) : (<>
           {/* Stats Card */}
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
@@ -2501,6 +2502,7 @@ Return format: [{${returnFields}}]`
         setUsername={setUsername}
         macroToggles={macroToggles}
         setMacroToggles={setMacroToggles}
+        onWeightDataImported={() => setWeightRefreshKey(k => k + 1)}
       />
     </div>
   );
