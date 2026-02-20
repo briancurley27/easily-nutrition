@@ -406,7 +406,13 @@ const AccountSettings = ({
         return;
       }
 
-      const rows = parsed.map(e => ({
+      // Deduplicate by date, keeping the last entry for each date
+      const dedupedMap = new Map();
+      for (const e of parsed) {
+        dedupedMap.set(e.date, e);
+      }
+
+      const rows = Array.from(dedupedMap.values()).map(e => ({
         user_id: session.user.id,
         date: e.date,
         weight_lbs: e.weight_lbs
