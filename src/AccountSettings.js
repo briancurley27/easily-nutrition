@@ -420,7 +420,7 @@ const AccountSettings = ({
       const rows = Array.from(groupedMap.entries()).map(([date, weights]) => ({
         user_id: session.user.id,
         date,
-        weight_lbs: weights.reduce((sum, w) => sum + w, 0) / weights.length
+        weight_lbs: Math.round((weights.reduce((sum, w) => sum + w, 0) / weights.length) * 10) / 10
       }));
 
       const { error } = await supabase
