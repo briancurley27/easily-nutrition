@@ -406,10 +406,21 @@ const AccountSettings = ({
         return;
       }
 
-      const rows = parsed.map(e => ({
+      // Group by date and average weights for duplicate dates
+      const groupedMap = new Map();
+      for (const e of parsed) {
+        if (!groupedMap.has(e.date)) {
+          groupedMap.set(e.date, []);
+        }
+        groupedMap.get(e.date).push(e.weight_lbs);
+      }
+
+      const duplicatedDates = Array.from(groupedMap.values()).filter(v => v.length > 1).length;
+
+      const rows = Array.from(groupedMap.entries()).map(([date, weights]) => ({
         user_id: session.user.id,
-        date: e.date,
-        weight_lbs: e.weight_lbs
+        date,
+        weight_lbs: Math.round((weights.reduce((sum, w) => sum + w, 0) / weights.length) * 10) / 10
       }));
 
       const { error } = await supabase
@@ -419,7 +430,8 @@ const AccountSettings = ({
       if (error) throw error;
 
       const errorSummary = errors.length > 0 ? ` (${errors.length} rows skipped)` : '';
-      setMessage({ type: 'success', text: `Imported ${parsed.length} weight entries${errorSummary}` });
+      const dupeSummary = duplicatedDates > 0 ? ` (${duplicatedDates} date${duplicatedDates > 1 ? 's' : ''} with multiple entries were averaged)` : '';
+      setMessage({ type: 'success', text: `Imported ${rows.length} weight entries${errorSummary}${dupeSummary}` });
       if (onWeightDataImported) onWeightDataImported();
     } catch (error) {
       console.error('Error importing weight CSV:', error);
