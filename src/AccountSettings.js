@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, User, Mail, Lock, Download, Upload, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
+const LBS_PER_KG = 2.20462;
+
 const AccountSettings = ({
   isOpen,
   onClose,
@@ -13,7 +15,11 @@ const AccountSettings = ({
   setUsername,
   macroToggles,
   setMacroToggles,
-  onWeightDataImported
+  onWeightDataImported,
+  weightUnit,
+  setWeightUnit,
+  weightGoal,
+  setWeightGoal
 }) => {
   // Form states
   const [usernameInput, setUsernameInput] = useState('');
@@ -24,6 +30,7 @@ const AccountSettings = ({
     carbs: '',
     fat: ''
   });
+  const [weightGoalInput, setWeightGoalInput] = useState('');
 
   // UI states
   const [activeTab, setActiveTab] = useState('goals');
@@ -60,6 +67,16 @@ const AccountSettings = ({
     }
   }, [isOpen, session, username, goals]);
 
+  // Sync weight goal input when weightGoal prop changes
+  useEffect(() => {
+    if (isOpen && weightGoal != null) {
+      const displayVal = weightUnit === 'kg'
+        ? Math.round((weightGoal / LBS_PER_KG) * 10) / 10
+        : Math.round(weightGoal * 10) / 10;
+      setWeightGoalInput(displayVal.toString());
+    }
+  }, [isOpen, weightGoal, weightUnit]);
+
   // Username validation
   const validateUsername = (value) => {
     if (!value) {
@@ -82,7 +99,6 @@ const AccountSettings = ({
     e.preventDefault();
     const trimmedUsername = usernameInput.trim();
 
-    // Validate without the delay (already validated on blur)
     const validationError = validateUsername(trimmedUsername);
     if (validationError) {
       setUsernameError(validationError);
@@ -106,7 +122,6 @@ const AccountSettings = ({
       setMessage({ type: 'success', text: 'Username updated successfully!' });
     } catch (error) {
       console.error('Error updating username:', error);
-      // Check if it's a uniqueness constraint error
       if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
         setMessage({ type: 'error', text: 'Username is already taken' });
       } else {
@@ -176,7 +191,7 @@ const AccountSettings = ({
     setLoading(true);
     try {
       await supabase.auth.signOut();
-      onClose(); // Close settings modal after logout
+      onClose();
     } catch (error) {
       console.error('Error logging out:', error);
       setMessage({ type: 'error', text: 'Failed to log out' });
@@ -185,7 +200,7 @@ const AccountSettings = ({
     }
   };
 
-  // Handle goals update
+  // Handle nutrition goals update
   const handleGoalsUpdate = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -218,15 +233,56 @@ const AccountSettings = ({
     }
   };
 
+  // Handle weight goal save
+  const handleWeightGoalSave = async () => {
+    const weight = parseFloat(weightGoalInput);
+    if (isNaN(weight) || weight <= 0) {
+      setMessage({ type: 'error', text: 'Please enter a valid goal weight' });
+      return;
+    }
+
+    const weightLbs = weightUnit === 'kg' ? weight * LBS_PER_KG : weight;
+
+    if (session?.user) {
+      setLoading(true);
+      const { error } = await supabase
+        .from('weight_goals')
+        .upsert({ user_id: session.user.id, target_weight_lbs: weightLbs });
+
+      setLoading(false);
+      if (error) {
+        setMessage({ type: 'error', text: 'Failed to save weight goal' });
+        return;
+      }
+    }
+
+    setWeightGoal(weightLbs);
+    setMessage({ type: 'success', text: `Weight goal set: ${weight} ${weightUnit}` });
+  };
+
+  // Handle weight goal clear
+  const handleWeightGoalClear = async () => {
+    if (session?.user) {
+      setLoading(true);
+      await supabase
+        .from('weight_goals')
+        .delete()
+        .eq('user_id', session.user.id);
+      setLoading(false);
+    }
+
+    setWeightGoal(null);
+    setWeightGoalInput('');
+    setMessage({ type: 'success', text: 'Weight goal cleared' });
+  };
+
   // Handle CSV export
   const handleExportCSV = () => {
     try {
-      // Prepare CSV data
       const rows = [
         ['Date', 'Time', 'Food Item', 'Quantity', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Source']
       ];
 
-      // Sort dates and add all entries
       const sortedDates = Object.keys(entries).sort();
       sortedDates.forEach(date => {
         entries[date].forEach(entry => {
@@ -246,10 +302,8 @@ const AccountSettings = ({
         });
       });
 
-      // Convert to CSV string
       const csvContent = rows.map(row =>
         row.map(cell => {
-          // Escape quotes and wrap in quotes if contains comma, quote, or newline
           const cellStr = String(cell);
           if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
             return '"' + cellStr.replace(/"/g, '""') + '"';
@@ -258,7 +312,6 @@ const AccountSettings = ({
         }).join(',')
       ).join('\n');
 
-      // Create download link
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
@@ -294,8 +347,7 @@ const AccountSettings = ({
         return;
       }
 
-      const unit = localStorage.getItem('easily-weight-unit') || 'lbs';
-      const LBS_PER_KG = 2.20462;
+      const unit = weightUnit;
 
       const rows = [['Date', `Weight (${unit})`]];
       data.forEach(entry => {
@@ -349,8 +401,7 @@ const AccountSettings = ({
       }
 
       const unitCol = header.findIndex(h => h.includes('unit'));
-      const displayUnit = localStorage.getItem('easily-weight-unit') || 'lbs';
-      const LBS_PER_KG = 2.20462;
+      const displayUnit = weightUnit;
 
       const parsed = [];
       const errors = [];
@@ -359,7 +410,6 @@ const AccountSettings = ({
         const cols = lines[i].split(',').map(c => c.trim());
         const weightVal = parseFloat(cols[weightCol]);
 
-        // Parse date - support YYYY-MM-DD, MM/DD/YYYY, MM-DD-YYYY
         let dateStr = cols[dateCol]?.trim();
         if (dateStr) {
           if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -406,7 +456,6 @@ const AccountSettings = ({
         return;
       }
 
-      // Group by date and average weights for duplicate dates
       const groupedMap = new Map();
       for (const e of parsed) {
         if (!groupedMap.has(e.date)) {
@@ -443,7 +492,6 @@ const AccountSettings = ({
 
   const allTabs = [
     { id: 'goals', label: 'Goals', icon: Target, requiresAuth: false },
-    { id: 'profile', label: 'Profile', icon: User, requiresAuth: true },
     { id: 'account', label: 'Account', icon: Mail, requiresAuth: true },
     { id: 'data', label: 'Data', icon: Download, requiresAuth: true }
   ];
@@ -503,9 +551,10 @@ const AccountSettings = ({
             </div>
           )}
 
-          {/* Profile Tab */}
-          {activeTab === 'profile' && (
-            <div className="space-y-6">
+          {/* Account Tab */}
+          {activeTab === 'account' && (
+            <div className="space-y-8">
+              {/* Username Section */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Username</h3>
                 <p className="text-sm text-gray-600 mb-4">
@@ -546,14 +595,9 @@ const AccountSettings = ({
                   </button>
                 </form>
               </div>
-            </div>
-          )}
 
-          {/* Account Tab */}
-          {activeTab === 'account' && (
-            <div className="space-y-8">
               {/* Email Section */}
-              <div>
+              <div className="border-t border-gray-200 pt-8">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Email Address</h3>
                 <p className="text-sm text-gray-600 mb-4">
                   Update your email address. You'll need to verify the new email before the change takes effect.
@@ -615,25 +659,17 @@ const AccountSettings = ({
             </div>
           )}
 
-          {/* Goals Tab (combined tracking + goals) */}
+          {/* Goals Tab */}
           {activeTab === 'goals' && (
             <div>
               {/* Macronutrient Toggles Section */}
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Macronutrient Tracking</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="text-sm text-gray-600 mb-1">
                 Choose which macronutrients to track alongside calories. Disabling macros reduces AI response time.
               </p>
-
-              {/* Calories is always on */}
-              <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg mb-3">
-                <div>
-                  <p className="font-medium text-gray-800">Calories</p>
-                  <p className="text-sm text-gray-500">Always tracked</p>
-                </div>
-                <div className="relative inline-flex h-6 w-11 items-center rounded-full bg-purple-600 cursor-not-allowed opacity-60">
-                  <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6" />
-                </div>
-              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Existing entries retain all their stored data regardless of these settings.
+              </p>
 
               <div className="space-y-3 mb-6">
                 {[
@@ -682,7 +718,7 @@ const AccountSettings = ({
 
               {/* Calorie Goal Section (authenticated users) */}
               {session && (
-                <div className="border-t border-gray-200 pt-6">
+                <div className="border-t border-gray-200 pt-6 mb-6">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4">Daily Calorie Goal</h3>
                   <form onSubmit={handleGoalsUpdate} className="space-y-4">
                     <div>
@@ -706,19 +742,40 @@ const AccountSettings = ({
                 </div>
               )}
 
-              {/* Info note */}
-              <div className="mt-6 p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-purple-800">
-                  <strong>Currently tracking:</strong>{' '}
-                  {(() => {
-                    const enabled = ['protein', 'carbs', 'fat'].filter(m => macroToggles[m]);
-                    if (enabled.length === 0) return 'Calories only';
-                    return 'Calories + ' + enabled.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ');
-                  })()}
-                </p>
-                <p className="text-xs text-purple-600 mt-1">
-                  Existing entries retain all their stored data regardless of these settings.
-                </p>
+              {/* Weight Goal Section */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Weight Goal</h3>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={weightGoalInput}
+                      onChange={(e) => setWeightGoalInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleWeightGoalSave(); } }}
+                      placeholder={`Goal weight (${weightUnit})`}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none pr-14"
+                      min="0"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{weightUnit}</span>
+                  </div>
+                  <button
+                    onClick={handleWeightGoalSave}
+                    disabled={loading || !weightGoalInput.trim()}
+                    className="bg-purple-600 text-white px-4 py-3 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
+                {weightGoal && (
+                  <button
+                    onClick={handleWeightGoalClear}
+                    disabled={loading}
+                    className="text-xs text-red-500 hover:text-red-700 mt-2"
+                  >
+                    Clear goal
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -726,8 +783,30 @@ const AccountSettings = ({
           {/* Data Tab */}
           {activeTab === 'data' && (
             <div className="space-y-8">
-              {/* Food Export */}
+              {/* Weight Unit */}
               <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Weight Unit</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Choose whether to display weight in pounds or kilograms.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setWeightUnit('lbs')}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition ${weightUnit === 'lbs' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    lbs
+                  </button>
+                  <button
+                    onClick={() => setWeightUnit('kg')}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition ${weightUnit === 'kg' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    kg
+                  </button>
+                </div>
+              </div>
+
+              {/* Food Export */}
+              <div className="border-t border-gray-200 pt-8">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Export Food Data</h3>
                 <p className="text-sm text-gray-600 mb-4">
                   Download all your nutrition data as a CSV file.
