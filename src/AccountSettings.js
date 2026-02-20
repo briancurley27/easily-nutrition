@@ -452,8 +452,8 @@ const AccountSettings = ({
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200 px-6">
-          <div className="flex gap-8">
+        <div className="border-b border-gray-200 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-6 px-6 min-w-max">
             {tabs.map(tab => {
               const Icon = tab.icon;
               return (
@@ -463,7 +463,7 @@ const AccountSettings = ({
                     setActiveTab(tab.id);
                     setMessage({ type: '', text: '' });
                   }}
-                  className={`flex items-center gap-2 py-4 border-b-2 transition ${
+                  className={`flex items-center gap-2 py-4 border-b-2 transition flex-shrink-0 whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-purple-600 text-purple-600'
                       : 'border-transparent text-gray-600 hover:text-gray-800'
