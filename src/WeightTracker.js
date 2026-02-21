@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Target, TrendingDown, TrendingUp, Minus, X } from 'lucide-react';
+import { Trash2, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { supabase } from './supabase';
 
@@ -12,22 +12,13 @@ const getLocalDateString = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-const WeightTracker = ({ session, refreshKey }) => {
+const WeightTracker = ({ session, refreshKey, unit, goalWeight, setGoalWeight }) => {
   // Weight data
   const [weightEntries, setWeightEntries] = useState([]); // [{ id, date, weightLbs }] sorted by date asc
-  const [goalWeight, setGoalWeight] = useState(null); // in lbs
-
-  // Display unit
-  const [unit, setUnit] = useState(() => {
-    try { return localStorage.getItem('easily-weight-unit') || 'lbs'; }
-    catch { return 'lbs'; }
-  });
 
   // Form inputs
   const [weightInput, setWeightInput] = useState('');
   const [dateInput, setDateInput] = useState(getLocalDateString());
-  const [goalInput, setGoalInput] = useState('');
-  const [showGoalForm, setShowGoalForm] = useState(false);
 
   // Chart
   const [chartPeriod, setChartPeriod] = useState('3m');
@@ -46,12 +37,6 @@ const WeightTracker = ({ session, refreshKey }) => {
   const toLbs = useCallback((value) => {
     if (value == null) return null;
     return unit === 'kg' ? value * LBS_PER_KG : value;
-  }, [unit]);
-
-  // Save unit preference
-  useEffect(() => {
-    try { localStorage.setItem('easily-weight-unit', unit); }
-    catch { /* ignore */ }
   }, [unit]);
 
   // Load data
@@ -86,7 +71,7 @@ const WeightTracker = ({ session, refreshKey }) => {
     }
 
     setIsLoading(false);
-  }, [session?.user?.id]);
+  }, [session?.user?.id, setGoalWeight]);
 
   useEffect(() => {
     if (session?.user) {
@@ -159,52 +144,6 @@ const WeightTracker = ({ session, refreshKey }) => {
     setWeightEntries(prev => prev.filter(e => e.id !== id));
   };
 
-  // Save goal
-  const saveGoal = async () => {
-    const weight = parseFloat(goalInput);
-    if (isNaN(weight) || weight <= 0) {
-      setMessage({ type: 'error', text: 'Please enter a valid goal weight' });
-      return;
-    }
-
-    const weightLbs = toLbs(weight);
-
-    if (session?.user) {
-      const { error } = await supabase
-        .from('weight_goals')
-        .upsert({
-          user_id: session.user.id,
-          target_weight_lbs: weightLbs
-        });
-
-      if (error) {
-        setMessage({ type: 'error', text: 'Failed to save goal' });
-        return;
-      }
-    }
-
-    setGoalWeight(weightLbs);
-    setShowGoalForm(false);
-    setGoalInput('');
-    setMessage({ type: 'success', text: `Goal set: ${weight} ${unit}` });
-    setTimeout(() => setMessage(null), 3000);
-  };
-
-  // Clear goal
-  const clearGoal = async () => {
-    if (session?.user) {
-      await supabase
-        .from('weight_goals')
-        .delete()
-        .eq('user_id', session.user.id);
-    }
-
-    setGoalWeight(null);
-    setShowGoalForm(false);
-    setMessage({ type: 'success', text: 'Goal cleared' });
-    setTimeout(() => setMessage(null), 3000);
-  };
-
   // Computed values
   const currentWeight = weightEntries.length > 0 ? weightEntries[weightEntries.length - 1] : null;
   const previousWeight = weightEntries.length > 1 ? weightEntries[weightEntries.length - 2] : null;
@@ -252,6 +191,7 @@ const WeightTracker = ({ session, refreshKey }) => {
     let cutoffDate;
 
     switch (chartPeriod) {
+      case '1w': cutoffDate = new Date(now); cutoffDate.setDate(cutoffDate.getDate() - 7); break;
       case '1m': cutoffDate = new Date(now); cutoffDate.setMonth(cutoffDate.getMonth() - 1); break;
       case '3m': cutoffDate = new Date(now); cutoffDate.setMonth(cutoffDate.getMonth() - 3); break;
       case '6m': cutoffDate = new Date(now); cutoffDate.setMonth(cutoffDate.getMonth() - 6); break;
@@ -271,6 +211,22 @@ const WeightTracker = ({ session, refreshKey }) => {
   };
 
   const chartData = getChartData();
+
+  // Compute year boundary labels for chart separators
+  const getYearBoundaries = (data) => {
+    const boundaries = [];
+    for (let i = 1; i < data.length; i++) {
+      const prevYear = data[i - 1].date.split('-')[0];
+      const currYear = data[i].date.split('-')[0];
+      if (currYear !== prevYear) {
+        boundaries.push({ label: data[i].label, year: currYear });
+      }
+    }
+    return boundaries;
+  };
+
+  const showDots = chartPeriod === '1w' || chartPeriod === '1m';
+  const showYearLines = ['6m', '1y', 'all'].includes(chartPeriod);
 
   // Format date for display
   const formatDisplayDate = (dateStr) => {
@@ -297,71 +253,6 @@ const WeightTracker = ({ session, refreshKey }) => {
       {message && (
         <div className={`p-3 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
           {message.text}
-        </div>
-      )}
-
-      {/* Unit Toggle + Goal Button */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setUnit('lbs')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${unit === 'lbs' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
-          >
-            lbs
-          </button>
-          <button
-            onClick={() => setUnit('kg')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${unit === 'kg' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
-          >
-            kg
-          </button>
-        </div>
-        <button
-          onClick={() => {
-            setShowGoalForm(!showGoalForm);
-            if (goalWeight && !showGoalForm) setGoalInput(toDisplay(goalWeight)?.toString() || '');
-          }}
-          className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 transition font-medium"
-        >
-          <Target size={16} />
-          {goalWeight ? 'Edit Goal' : 'Set Goal'}
-        </button>
-      </div>
-
-      {/* Goal Form */}
-      {showGoalForm && (
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-800">Goal Weight</h3>
-            <button onClick={() => setShowGoalForm(false)} className="text-gray-400 hover:text-gray-600">
-              <X size={18} />
-            </button>
-          </div>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input
-                type="number"
-                step="0.1"
-                value={goalInput}
-                onChange={(e) => setGoalInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveGoal(); } }}
-                placeholder={`Goal weight (${unit})`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none pr-12"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{unit}</span>
-            </div>
-            <button
-              onClick={saveGoal}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition"
-            >
-              Save
-            </button>
-          </div>
-          {goalWeight && (
-            <button onClick={clearGoal} className="text-xs text-red-500 hover:text-red-700 mt-2">
-              Clear goal
-            </button>
-          )}
         </div>
       )}
 
@@ -426,13 +317,49 @@ const WeightTracker = ({ session, refreshKey }) => {
         )}
       </div>
 
+      {/* Log Weight Form */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <h3 className="font-semibold text-gray-800 mb-3">Log Weight</h3>
+        <div className="flex gap-2">
+          <input
+            type="date"
+            value={dateInput}
+            onChange={(e) => setDateInput(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+          />
+          <div className="flex-1 relative">
+            <input
+              type="number"
+              step="0.1"
+              value={weightInput}
+              onChange={(e) => setWeightInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  logWeight();
+                }
+              }}
+              placeholder="Weight"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none pr-12"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{unit}</span>
+          </div>
+          <button
+            onClick={logWeight}
+            disabled={!weightInput.trim()}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 transition"
+          >
+            Log
+          </button>
+        </div>
+      </div>
+
       {/* Chart */}
       {chartData.length >= 2 && (
         <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-800">Weight History</h3>
+          <div className="flex justify-end mb-4">
             <div className="flex gap-1">
-              {['1m', '3m', '6m', '1y', 'all'].map(period => (
+              {['1w', '1m', '3m', '6m', '1y', 'all'].map(period => (
                 <button
                   key={period}
                   onClick={() => setChartPeriod(period)}
@@ -477,55 +404,27 @@ const WeightTracker = ({ session, refreshKey }) => {
                   label={{ value: `Goal`, position: 'right', fontSize: 10, fill: '#22c55e' }}
                 />
               )}
+              {showYearLines && getYearBoundaries(chartData).map(b => (
+                <ReferenceLine
+                  key={b.year}
+                  x={b.label}
+                  stroke="#e5e7eb"
+                  strokeWidth={1.5}
+                  label={{ value: b.year, position: 'insideTopLeft', fontSize: 10, fill: '#9ca3af' }}
+                />
+              ))}
               <Line
                 type="monotone"
                 dataKey="weight"
                 stroke="#9333ea"
                 strokeWidth={2}
-                dot={{ fill: '#9333ea', r: 3 }}
+                dot={showDots ? { fill: '#9333ea', r: 3 } : false}
                 activeDot={{ r: 5 }}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
-
-      {/* Log Weight Form */}
-      <div className="bg-white rounded-xl shadow-sm p-4">
-        <h3 className="font-semibold text-gray-800 mb-3">Log Weight</h3>
-        <div className="flex gap-2">
-          <input
-            type="date"
-            value={dateInput}
-            onChange={(e) => setDateInput(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
-          />
-          <div className="flex-1 relative">
-            <input
-              type="number"
-              step="0.1"
-              value={weightInput}
-              onChange={(e) => setWeightInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  logWeight();
-                }
-              }}
-              placeholder="Weight"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none pr-12"
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{unit}</span>
-          </div>
-          <button
-            onClick={logWeight}
-            disabled={!weightInput.trim()}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 transition"
-          >
-            Log
-          </button>
-        </div>
-      </div>
 
       {/* Recent Entries */}
       {weightEntries.length > 0 && (

@@ -264,6 +264,11 @@ const CalorieTracker = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [activeView, setActiveView] = useState('food');
   const [weightRefreshKey, setWeightRefreshKey] = useState(0);
+  const [weightUnit, setWeightUnit] = useState(() => {
+    try { return localStorage.getItem('easily-weight-unit') || 'lbs'; }
+    catch { return 'lbs'; }
+  });
+  const [weightGoal, setWeightGoal] = useState(null);
 
   // Macro tracking toggle (persisted in localStorage + Supabase user_metadata for authenticated users)
   const [macroToggles, setMacroToggles] = useState(() => {
@@ -315,6 +320,12 @@ const CalorieTracker = () => {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  // Persist weight unit to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('easily-weight-unit', weightUnit); }
+    catch { /* ignore */ }
+  }, [weightUnit]);
 
   // Persist macro toggles to localStorage + Supabase user_metadata
   useEffect(() => {
@@ -2004,7 +2015,7 @@ Return format: [{${returnFields}}]`
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto">
           {activeView === 'weight' ? (
-            <WeightTracker session={session} refreshKey={weightRefreshKey} />
+            <WeightTracker session={session} refreshKey={weightRefreshKey} unit={weightUnit} goalWeight={weightGoal} setGoalWeight={setWeightGoal} />
           ) : (<>
           {/* Stats Card */}
           <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl shadow-sm p-4 lg:p-8 mb-6">
@@ -2503,6 +2514,10 @@ Return format: [{${returnFields}}]`
         macroToggles={macroToggles}
         setMacroToggles={setMacroToggles}
         onWeightDataImported={() => setWeightRefreshKey(k => k + 1)}
+        weightUnit={weightUnit}
+        setWeightUnit={setWeightUnit}
+        weightGoal={weightGoal}
+        setWeightGoal={setWeightGoal}
       />
     </div>
   );
