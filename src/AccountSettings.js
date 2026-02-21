@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Mail, Lock, Download, Upload, Target, Check, AlertCircle, LogOut } from 'lucide-react';
+import { X, Mail, Lock, Download, Upload, Target, Check, AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from './supabase';
 
 const LBS_PER_KG = 2.20462;
