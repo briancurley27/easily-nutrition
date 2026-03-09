@@ -1592,7 +1592,8 @@ Return format: [{${returnFields}}]`
   };
 
   const handleDragEnd = () => {
-    // Clear preview when drag ends (for desktop)
+    // Clear drag state when drag ends (for desktop)
+    setDraggedItem(null);
     setDragPreview(null);
   };
 
