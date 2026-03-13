@@ -1592,7 +1592,8 @@ Return format: [{${returnFields}}]`
   };
 
   const handleDragEnd = () => {
-    // Clear preview when drag ends (for desktop)
+    // Clear drag state when drag ends (for desktop)
+    setDraggedItem(null);
     setDragPreview(null);
   };
 
@@ -2378,7 +2379,7 @@ Return format: [{${returnFields}}]`
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, entry.id, idx)}
                                     onDragEnd={handleDragEnd}
-                                    onTouchStart={(e) => handleUnifiedTouchStart(e, entry.id, idx, true)}
+                                    onTouchStart={(e) => { e.stopPropagation(); handleUnifiedTouchStart(e, entry.id, idx, true); }}
                                     onTouchMove={handleUnifiedTouchMove}
                                     onTouchEnd={handleUnifiedTouchEnd}
                                     className="cursor-grab active:cursor-grabbing p-1 -ml-1 touch-none"
